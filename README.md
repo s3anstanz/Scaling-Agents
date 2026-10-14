@@ -31,7 +31,7 @@ Every lab runs in that copy, never in this repo. The copy is your own git repo; 
 kestrel-starter/   the practice codebase: 24 Python modules, 142 tests, an empty TypeScript project, lab scripts
 course/            the course source: 20 lessons, page shell, build script and tests
 ci/                the trap guard: proves a naive port fails and a correct one passes
-.github/           CI and security workflows, Dependabot, the branch ruleset to import
+.github/           CI and security workflows, Dependabot, the main-branch ruleset
 ```
 
 ## Working on the course
@@ -47,30 +47,3 @@ cd ts && npm ci && cd ../.. && ci/check_traps.sh
 ```
 
 Lessons follow the contract in [`course/AUTHORING.md`](course/AUTHORING.md). To update the published page, build it and republish `course/dist/scaling-agents.html` to the same artifact.
-
-## Checks and protection
-
-Every pull request runs two workflows. Each ends in one summary job, and those two are the required status checks.
-
-| Workflow | Jobs | Required check |
-|---|---|---|
-| CI | Ruff and ShellCheck · starter tests on Python 3.11 and 3.13 · lab scripts · TypeScript type-check · trap guard · course build, structure checks and browser smoke test | `All checks pass` |
-| Security | gitleaks over the full history · Semgrep (Python, JavaScript, workflow files) · `npm audit` for both toolchains; also runs weekly | `Security checks pass` |
-
-Dependabot opens weekly update PRs for both npm toolchains and the GitHub Actions versions. Those PRs go through the same checks.
-
-`main` is protected by the ruleset in [`.github/rulesets/protect-main.json`](.github/rulesets/protect-main.json):
-
-- changes land only through a pull request, squash-merged, with linear history
-- both required checks must pass on the latest commit of the branch
-- review threads must be resolved; no approval is required, so the owner can merge their own PRs
-- force-pushes and deleting `main` are blocked, with no bypass list
-
-GitHub's code scanning (CodeQL) and secret scanning need an organization on Team or Enterprise for private repos, so this private repo runs Semgrep and gitleaks in CI instead.
-
-### One-time repository settings
-
-1. **Settings → Rules → Rulesets → New ruleset → Import a ruleset**, and choose `.github/rulesets/protect-main.json`.
-2. **Settings → General → Pull Requests:** allow squash merging only, and turn on **Automatically delete head branches**.
-3. **Settings → Code security:** turn on **Dependabot alerts** and **Dependabot security updates**.
-4. **Settings → Actions → General → Workflow permissions:** keep **Read repository contents** (the default).
