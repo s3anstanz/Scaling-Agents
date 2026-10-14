@@ -177,7 +177,7 @@
       <p class="lab__goal"><b>Goal.</b> Port the pipeline chain (<code>steps</code>, <code>runner</code>, <code>cli</code>) with a lead and three teammates who settle interfaces by message, then compare cost and outcome with Lesson 11's hub-and-spoke run.</p>
       <ol class="lab__steps">
         <li><p>Confirm where you are. Only the pipeline chain should be left.</p>
-          <div class="cmd"><pre><code>cd kestrel-starter
+          <div class="cmd"><pre><code>source .venv/bin/activate
 python scripts/status.py --next</code></pre></div>
         </li>
         <li><p>Start a session with teams enabled. The variable applies only to this launch.</p>
@@ -194,7 +194,7 @@ Rules for every teammate: follow MIGRATION.md. A task is complete only when scri
           <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
           <div class="cmd"><pre><code>python scripts/status.py</code></pre></div>
         </li>
-        <li><p>Ask the lead for a retrospective, then add a row to <code>notes/baseline.md</code> with modules, cost, wall-clock and message count beside your Lesson 11 row.</p>
+        <li><p>Ask the lead for a retrospective, then add a line under the table in <code>notes/baseline.md</code> with modules, cost, wall-clock and message count, beside your Lesson 11 line.</p>
           <div class="cmd" data-kind="prompt"><pre><code>Summarize the team run: how many messages did teammates send each other, what did they agree on, and did any message prevent a mismatch between steps, runner and cli before code was written? Then estimate whether a hub-and-spoke run with porter subagents in sequence would have cost more or less for these three modules, and why.</code></pre></div>
         </li>
       </ol>

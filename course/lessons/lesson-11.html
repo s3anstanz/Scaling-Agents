@@ -142,7 +142,7 @@
       <p class="lab__goal"><b>Goal.</b> Turn Kestrel's imports into a written wave plan, check it against the ready queue, and let the orchestrator work the queue for the analysis package.</p>
       <ol class="lab__steps">
         <li><p>Look at the graph yourself first. Read the critical path and the L3 width off the output.</p>
-          <div class="cmd"><pre><code>cd kestrel-starter
+          <div class="cmd"><pre><code>source .venv/bin/activate
 python scripts/deps.py --layers
 python scripts/deps.py --critical
 python scripts/status.py
@@ -157,7 +157,7 @@ python scripts/status.py --next</code></pre></div>
         <li><p>Read <code>PLAN.md</code> and compare it with <code>--next</code>. Both <code>analysis/edges</code> and <code>pipeline/steps</code> should be ready, the two remaining members of wave L4, while <code>runner</code> and <code>cli</code> are blocked. Then let the orchestrator work the queue for the analysis package.</p>
           <div class="cmd" data-kind="prompt"><pre><code>Work from PLAN.md. Run `python scripts/status.py --next`. For every listed module under kestrel/analysis/, start one porter subagent; if there are several, run them in parallel. Do not start kestrel/pipeline/ or kestrel/cli.py; a later lesson ports those. When a porter reports, run scripts/verify.sh yourself on its module and treat its report as a claim. Record any trap it reports in MIGRATION.md yourself. Update the status column in PLAN.md and run --next again. Finally tell me which modules are ready now, why pipeline/steps.py only became ready after the last op passed, and how long the remaining critical path is in modules.</code></pre></div>
         </li>
-        <li><p>Record the run. Check <code>/usage</code>, then add a row to <code>notes/baseline.md</code>: modules ported, number of parallel porters at peak, wall-clock, cost.</p>
+        <li><p>Record the run. Check <code>/usage</code>, then add a line under the table in <code>notes/baseline.md</code>: modules ported, number of parallel porters at peak, wall-clock, cost.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
         </li>
       </ol>

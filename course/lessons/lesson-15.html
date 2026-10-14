@@ -121,9 +121,8 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Run the differential end-to-end test across several specs, then use a bisecting subagent to attribute a failure to one module.</p>
       <ol class="lab__steps">
-        <li><p>Confirm all 24 modules are ported and passing, then save this state so you can return to it. If <code>kestrel-starter</code> is not a git repo yet, run the first line too.</p>
-          <div class="cmd"><pre><code>cd kestrel-starter
-git init -q &amp;&amp; printf 'ts/node_modules/\n__pycache__/\n.pytest_cache/\n' &gt;&gt; .gitignore
+        <li><p>Confirm all 24 modules are ported and passing, then save this state so you can return to it.</p>
+          <div class="cmd"><pre><code>source .venv/bin/activate
 python scripts/status.py
 git add -A &amp;&amp; git commit -qm "week 3: all modules ported"</code></pre></div>
         </li>
@@ -160,7 +159,7 @@ difference, and the test case that would have caught it.</code></pre></div>
           <div class="cmd"><pre><code>claude -p "Make one small, realistic change to a single file under ts/src/ so that python scripts/difftest.py reports a mismatch for at least one of these specs: gray|threshold:128, blur:1, invert. scripts/verify.sh for the module you change must still exit 0. Do not edit any test file and do not commit." \
   --model sonnet --max-turns 20 --max-budget-usd 1 \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Glob,Grep,Bash(scripts/*),Bash(python scripts/*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(npx vitest*)" \
   &lt; /dev/null &gt; /dev/null</code></pre></div>
         </li>
         <li><p>Hand the failure to the bisector.</p>
@@ -178,7 +177,7 @@ git checkout -- ts/src</code></pre></div>
     </div>
   </div>
 
-  <div class="c-note"><p><b>Before Week 4.</b> Your <code>kestrel-starter</code> now holds a complete, verified port, committed to git. Keep it as your reference. Week 4 re-ports Kestrel at scale with 10 to 20 agents, so it starts from a fresh copy: a new copy of the starter from the course repo into <code>kestrel-scale/</code> (or, if you prefer, a reset of <code>ts/</code> with <code>git stash</code>). Bring your <code>.claude/agents/</code> files, <code>scripts/gen_barrel.py</code>, the Stop gate and your filled-in <code>MIGRATION.md</code> Known traps with you; they are what you learned.</p></div>
+  <div class="c-note"><p><b>Before Week 4.</b> Your <code>kestrel-starter</code> now holds a complete, verified port, committed to git. Keep it as your reference. Week 4 re-ports Kestrel at scale with 10 to 20 agents, so it starts from a fresh copy: a new copy of the starter from the course repo into <code>kestrel-scale/</code> (or, if you prefer, a reset of <code>ts/</code> with <code>git stash</code>). Lab 16 brings <code>scripts/gen_barrel.py</code> across; the Week 4 workflows name their own models, so your agent files, Stop gate and Known traps stay here as your reference.</p></div>
 
   <div class="c-takeaway"><div class="label">Key takeaway</div><p>Per-node checks prove each agent did its job; only an end-to-end check against the oracle proves the jobs fit together. When the end-to-end check fails, bisect by step, sample and spec to name the module, then turn the failure into a per-node test.</p></div>
   <div class="teaser"><b>Next</b>Lesson 16 · Workflows: orchestration as code. Week 4 moves the orchestration out of the conversation and into a script that can run a hundred agents.</div>
