@@ -165,7 +165,7 @@ for m in threshold resize rotate brightness; do
     --output-format json --json-schema "$SCHEMA" \
     --max-turns 25 --max-budget-usd 0.75 \
     --permission-mode acceptEdits \
-    --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(npx vitest*),Bash(python -m pytest*)" \
+    --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
     &lt; /dev/null &gt; results/$m.json &amp;
 done
 wait
