@@ -241,13 +241,12 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Have Claude write a workflow that ports the ready wave with one cheap agent per module, watch it in <code>/workflows</code>, save it, and run it until the 14-module wave is done.</p>
       <ol class="lab__steps">
-        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Copy it again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one (or unzip the download again). The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
+        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Run this from the folder that contains <code>scaling-agents</code> and <code>kestrel-starter</code>: it copies the starter again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one. If you set up from the zip instead, unzip it again somewhere else so it does not overwrite your old <code>kestrel-starter</code>, move the unzipped folder here as <code>kestrel-scale</code>, and start at the <code>cd kestrel-scale</code> line. The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
           <div class="cmd"><pre><code>git -C scaling-agents pull -q
 cp -R scaling-agents/kestrel-starter ./kestrel-scale
 cd kestrel-scale
-printf '.venv/\nts/node_modules/\n__pycache__/\n.pytest_cache/\n.claude/settings.local.json\n' &gt;&gt; .gitignore
 git init &amp;&amp; git add -A &amp;&amp; git commit -m "Kestrel starter"
-python -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install pytest
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install pytest
 cd ts &amp;&amp; npm ci &amp;&amp; cd ..
 python -m pytest -q</code></pre></div>
         </li>
@@ -255,7 +254,7 @@ python -m pytest -q</code></pre></div>
           <div class="cmd"><pre><code>cp ../kestrel-starter/scripts/gen_barrel.py scripts/
 git add -A &amp;&amp; git commit -qm "week 4 setup" &amp;&amp; git tag fresh</code></pre></div>
         </li>
-        <li><p>Tell Claude it may plan workflows of up to 50 agents. Create this file. It holds settings for your machine only, which is why the step above added it to <code>.gitignore</code>.</p>
+        <li><p>Tell Claude it may plan workflows of up to 50 agents. Create this file. It holds settings for your machine only, which is why the starter's <code>.gitignore</code> already lists it.</p>
           <div class="cmd" data-file=".claude/settings.local.json"><pre><code>{
   "workflowSizeGuideline": "large"
 }</code></pre></div>
@@ -282,7 +281,7 @@ python scripts/status.py</code></pre></div>
         <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one and expect the "Large workflow" warning.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
         </li>
-        <li><p>Compare Claude's saved script with the reference version below. If yours is missing an independent verify, a schema, or the null filter, replace it with this one and rerun <code>/port-wave</code>; green modules come back green again, so nothing is lost.</p>
+        <li><p>Compare Claude's saved script with the reference version below. If yours is missing an independent verify, a schema, or the null filter, replace it with this one. Do not rerun it now: <code>--next</code> would start wave L4. Lab 18 uses it from a reset.</p>
           <div class="cmd" data-file=".claude/workflows/port-wave.js"><pre><code>export const meta = {
   name: 'port-wave',
   description: 'Port every module in the next ready wave, one agent per module, each checked by scripts/verify.sh',

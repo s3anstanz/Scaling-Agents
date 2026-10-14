@@ -265,7 +265,7 @@ Finally, append any new trap the porters or the reviewer reported to the Known t
         </li>
       </ol>
       <div class="lab__expect"><div class="label">What you should see</div><p>The planner replies with SCOPE, PACKAGES, TRAPS, ORDER, VERIFY and RISKS, and probably flags header parsing in <code>ppm.py</code>. Two porter calls run in parallel and each returns the 6-line report. <code>io/ppm</code> is where trap T5 lives: PPM headers may contain <code>#</code> comments and irregular whitespace. A naive split on spaces fails the Python-derived tests; if the porter misses part of it, the reviewer's R3 should catch it. You end with <code>io/ppm</code> and <code>io/pgm</code> passing, a T5 entry in <code>MIGRATION.md</code> written by the lead, and three agent files that Week 3 builds on.</p></div>
-      <div class="lab__stretch"><div class="label">Stretch</div><p>Run <code>claude --agent reviewer</code> and ask it to review <code>kestrel/ops/blur.py</code> from Week 1. A whole session in the reviewer role sees your port with fresh eyes. Then ask it to "just fix" a finding and watch the tool allowlist stop it.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Run <code>claude --agent reviewer</code> and ask it to review <code>kestrel/ops/blur.py</code> from Week 1. A whole session in the reviewer role sees your port with fresh eyes. Then ask it to "just fix" a finding and watch what stops it: no Edit or Write tool, and a permission prompt if it tries to change a file through Bash.</p></div>
     </div>
   </div>
 

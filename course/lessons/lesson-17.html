@@ -224,7 +224,7 @@
       <p class="lab__goal"><b>Goal.</b> Port the whole starter through a tree of package sub-leads, where the top lead reads only short summaries, then drill down from a summary to the facts.</p>
       <ol class="lab__steps">
         <li><p>In <code>kestrel-scale/</code>, reset the port to the <code>fresh</code> tag. This removes the ported TypeScript and keeps your workflows and <code>MIGRATION.md</code>, including any traps you recorded. Keeping the traps is realistic: a real migration gets smarter as it goes.</p>
-          <div class="cmd"><pre><code>cd kestrel-scale
+          <div class="cmd"><pre><code>source .venv/bin/activate
 git add -A &amp;&amp; git commit -qm "before lab 17" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts
 python scripts/status.py</code></pre></div>

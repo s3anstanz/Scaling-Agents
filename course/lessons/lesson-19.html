@@ -139,7 +139,7 @@
       <p class="lab__goal"><b>Goal.</b> Port all 24 starter modules with a fleet of cheap workers, measure cost per green module and wall-clock, then extrapolate to 240 modules at 10, 25 and 100 agents.</p>
       <ol class="lab__steps">
         <li><p>Reset the port in <code>kestrel-scale/</code>.</p>
-          <div class="cmd"><pre><code>cd kestrel-scale
+          <div class="cmd"><pre><code>source .venv/bin/activate
 git add -A &amp;&amp; git commit -qm "before lab 19" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
         </li>
@@ -201,7 +201,7 @@ log('Now run /usage, note the cost, and divide by the green count for cost per m
           <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
         </li>
-        <li><p>In a second terminal, note the start time. Then run the workflow. Expect the "Large workflow" warning, since this run uses well over 25 agents. During the L3 wave, open <code>/workflows</code> and count how many porters are running at once.</p>
+        <li><p>In a second terminal, in <code>kestrel-scale/</code> with <code>source .venv/bin/activate</code> run first, note the start time. Then run the workflow. Expect the "Large workflow" warning, since this run uses well over 25 agents. During the L3 wave, open <code>/workflows</code> and count how many porters are running at once.</p>
           <div class="cmd"><pre><code>date</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>/port-all</code></pre></div>
         </li>

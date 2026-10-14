@@ -324,7 +324,7 @@
       <p class="lab__goal"><b>Goal.</b> Run the full design against the starter: a small first run, your approval, the full run with its difftest gate, then a one-page retrospective.</p>
       <ol class="lab__steps">
         <li><p>Reset the port in <code>kestrel-scale/</code>.</p>
-          <div class="cmd"><pre><code>cd kestrel-scale
+          <div class="cmd"><pre><code>source .venv/bin/activate
 git add -A &amp;&amp; git commit -qm "before lab 20" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts
 rm -f PLAN.md</code></pre></div>
