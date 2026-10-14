@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python -m pip install semgrep==1.85.0
+      - run: python -m pip install semgrep==1.180.0
       - name: Scan Python, JavaScript and workflow files
         run: semgrep scan --config p/python --config p/javascript --config p/github-actions --error --metrics off
 

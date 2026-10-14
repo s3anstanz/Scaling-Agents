@@ -38,9 +38,9 @@ fail() { echo "FAIL $mod: $1" >&2; exit 1; }
 [ -d ts/node_modules ] || fail "ts/node_modules missing: run (cd ts && npm ci)"
 
 missing=""
-for name in $(grep -oE '^def test_[A-Za-z0-9_]+' "$py_test" | cut -d' ' -f2); do
-  grep -qE "[\"'\`]$name[\"'\`]" "$ts_test" || missing="$missing $name"
-done
+while read -r name; do
+  grep -qE "[\"'\`]${name}[\"'\`]" "$ts_test" || missing="$missing $name"
+done < <(grep -oE '^def test_[A-Za-z0-9_]+' "$py_test" | cut -d' ' -f2)
 [ -z "$missing" ] || fail "TS test file lacks ported cases:$missing"
 
 echo "== TypeScript: $ts_test"

@@ -45,9 +45,13 @@ run_case correct-port correct pass || status=1
 run_case dropped-trap-test correct fail test_round_half_even_sends_halves_to_the_even_neighbour || status=1
 
 if [ $status -eq 0 ]; then
-  grep -q "test_round_half_even_sends_halves_to_the_even_neighbour" "$work/naive-port.log" \
-    && grep -q "test_floor_div_rounds_toward_negative_infinity" "$work/naive-port.log" \
-    && echo "ok   naive port fails on both planted traps (T1 rounding, T2 floor division)" \
-    || { echo "FAIL naive port did not fail on both trap tests"; cat "$work/naive-port.log"; status=1; }
+  if grep -q "test_round_half_even_sends_halves_to_the_even_neighbour" "$work/naive-port.log" \
+    && grep -q "test_floor_div_rounds_toward_negative_infinity" "$work/naive-port.log"; then
+    echo "ok   naive port fails on both planted traps (T1 rounding, T2 floor division)"
+  else
+    echo "FAIL naive port did not fail on both trap tests"
+    cat "$work/naive-port.log"
+    status=1
+  fi
 fi
 exit $status
