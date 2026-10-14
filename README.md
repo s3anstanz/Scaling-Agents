@@ -63,7 +63,7 @@ The last line should end with `142 passed`. Run `source .venv/bin/activate` agai
 
 - **`python3 --version` or `node --version` is too old:** install a newer version from the links in step 1.
 - **`npm ci` fails:** check that `node --version` shows v22.12 or newer.
-- **You want a clean start:** delete the `kestrel-starter` folder and repeat steps 2 and 3.
+- **You want a clean start:** delete both the `kestrel-starter` and `scaling-agents` folders, then repeat steps 2 and 3.
 
 ## Working on the course itself
 

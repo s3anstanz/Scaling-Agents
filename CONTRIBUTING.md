@@ -23,4 +23,4 @@ cd ts && npm ci && cd ../.. && ci/check_traps.sh
 
 Lessons follow the contract in [`course/AUTHORING.md`](course/AUTHORING.md). To update the published page, build it and republish `course/dist/scaling-agents.html` to the same artifact.
 
-`main` is protected: open a pull request from a branch. It merges once both required checks, **All checks pass** and **Security checks pass**, are green.
+`main` is protected: open a pull request from a branch. It merges once both required checks, **All checks pass** and **Security checks pass**, are green and every review thread is resolved.
