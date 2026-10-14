@@ -100,7 +100,7 @@
         <li><button class="cl" data-note="n3"><span class="ln">3</span><pre>  --max-turns <span class="tk-num">20</span> --max-budget-usd <span class="tk-num">1</span> \</pre></button></li>
         <li><button class="cl" data-note="n4"><span class="ln">4</span><pre>  --output-format json \</pre></button></li>
         <li><button class="cl" data-note="n5"><span class="ln">5</span><pre>  --permission-mode acceptEdits \</pre></button></li>
-        <li><button class="cl" data-note="n6"><span class="ln">6</span><pre>  --allowedTools <span class="tk-str">"Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)"</span> \</pre></button></li>
+        <li><button class="cl" data-note="n6"><span class="ln">6</span><pre>  --allowedTools <span class="tk-str">"Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)"</span> \</pre></button></li>
         <li><div class="cl"><span class="ln">7</span><pre>  &gt; notes/runs/mathutil.json</pre></div></li>
       </ol>
       <div class="c-code__notes">
@@ -165,7 +165,7 @@ claude -p "Port kestrel/core/errors.py to TypeScript at ts/src/core/errors.ts, f
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/errors.json
 echo "errors $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
 python scripts/runinfo.py notes/runs/errors.json</code></pre></div>
@@ -177,7 +177,7 @@ claude -p "Port kestrel/core/mathutil.py to TypeScript at ts/src/core/mathutil.t
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/mathutil.json
 echo "mathutil $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
 python scripts/runinfo.py notes/runs/mathutil.json</code></pre></div>
@@ -193,7 +193,7 @@ git diff MIGRATION.md</code></pre></div>
 python scripts/status.py</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>Two run records with a small <code>num_turns</code> for <code>errors</code> and a larger one for <code>mathutil</code>, each well under $1. Both <code>verify.sh</code> calls print <code>exit=0</code>. In the <code>mathutil</code> report, look for T2: a first attempt with <code>Math.trunc</code> that failed on negative inputs, or a note that <code>Math.floor</code> was needed. You may also see T1, since <code>Math.round(2.5)</code> is 3 while <code>round_half_even(2.5)</code> must be 2; a naive port fails the <code>round_half_even</code>, <code>floor_div</code> and <code>mean_int</code> tests. If the agent got both right on the first try, it probably read the docstrings carefully; the test still checked it. <code>CLAUDE.md</code> tells agents to add a bullet to Known traps in <code>MIGRATION.md</code> when they find a difference, so <code>git diff MIGRATION.md</code> may already show one. Lab 03 tidies those entries up. <code>status.py</code> now shows two ported modules.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Two run records, with <code>num_turns</code> for <code>errors</code> usually no larger than for <code>mathutil</code>, each well under $1. Both <code>verify.sh</code> calls print <code>exit=0</code>. In the <code>mathutil</code> report, look for T2: a first attempt with <code>Math.trunc</code> that failed on negative inputs, or a note that <code>Math.floor</code> was needed. You may also see T1, since <code>Math.round(2.5)</code> is 3 while <code>round_half_even(2.5)</code> must be 2; a naive port fails the <code>round_half_even</code>, <code>floor_div</code> and <code>mean_int</code> tests. If the agent got both right on the first try, it probably read the docstrings carefully; the test still checked it. <code>CLAUDE.md</code> tells agents to add a bullet to Known traps in <code>MIGRATION.md</code> when they find a difference, so <code>git diff MIGRATION.md</code> may already show one. Lab 03 tidies those entries up. <code>status.py</code> now shows two ported modules.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>See a cap fire. Remove the mathutil port with <code>git rm -q ts/src/core/mathutil.ts ts/test/core/mathutil.test.ts</code>, rerun step 4 with <code>--max-turns 3</code> writing to <code>notes/runs/cap-test.json</code> (and skip the <code>seconds.txt</code> line), inspect it with <code>runinfo.py</code>, then restore everything with <code>git reset -q --hard</code>.</p></div>
     </div>
   </div>
