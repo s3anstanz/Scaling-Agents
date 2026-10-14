@@ -135,7 +135,7 @@
       <p class="lab__goal"><b>Goal.</b> Port the same three ops twice, once with Haiku workers and once with Sonnet workers under an Opus lead, and compare first-try pass rate and cost.</p>
       <ol class="lab__steps">
         <li><p>Save a copy of the barrel file so you can reset between runs.</p>
-          <div class="cmd"><pre><code>cd kestrel-starter
+          <div class="cmd"><pre><code>source .venv/bin/activate
 cp ts/src/index.ts notes/index.ts.before-l07</code></pre></div>
         </li>
         <li><p>Start an Opus lead with Haiku as the default worker model.</p>
@@ -161,7 +161,7 @@ python scripts/status.py</code></pre></div>
         <li><p>Start again with Sonnet workers, run the same prompt from step 3, then <code>/usage</code>.</p>
           <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet claude --model opus</code></pre></div>
         </li>
-        <li><p>Add both runs to <code>notes/baseline.md</code>, and add a column for first-try passes (how many modules had RUNS = 1). Keep the Sonnet run's files; you will build on them.</p></li>
+        <li><p>Add both runs under the table in <code>notes/baseline.md</code>, each with its total cost, wall-clock minutes and first-try passes (how many modules had RUNS = 1). Keep the Sonnet run's files; you will build on them.</p></li>
       </ol>
       <div class="lab__expect"><div class="label">What you should see</div><p>Both runs end with the three ops ported and passing, because the Stop hook will not let the lead finish otherwise. The difference shows in RUNS and in cost. Haiku workers often need more <code>verify.sh</code> runs and cost less per attempt; Sonnet workers more often pass on the first run. Divide each run's total by 3 to get cost per verified module. Your own numbers decide the porter row in the table. If a cheap worker changed an expected value in a test to make it pass, you have found the reason for Lesson 08's reviewer.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Repeat the Haiku run with <code>--effort high</code> on the lead and compare. Then try <code>claude --model opusplan</code> with no subagents at all on one op, and see whether planning on Opus and executing on Sonnet in a single session beats a team for a task this small.</p></div>
