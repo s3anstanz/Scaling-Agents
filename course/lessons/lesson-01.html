@@ -147,23 +147,7 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Get the starter running, then watch one Claude Code session explore it and count the loop iterations.</p>
       <ol class="lab__steps">
-        <li><p>Clone the course repo and copy the starter out into its own working folder. The course repo stays clean as the reference; every lab runs in your copy. You need Python 3.11 or newer, Node.js 22.12 or newer with npm, git and Claude Code. Commands are for a macOS or Linux shell. No access to the repo? Use the <b>Download kestrel-starter.zip</b> button on the Course home page and unzip it instead.</p>
-          <div class="cmd"><pre><code>git clone https://github.com/s3anstanz/scaling-agents.git
-cp -R scaling-agents/kestrel-starter ./kestrel-starter
-cd kestrel-starter</code></pre></div>
-        </li>
-        <li><p>Set up Python and run the reference tests. All 142 should pass. They are the behaviour the port must match. Activate the virtual environment in every new terminal you use for this course.</p>
-          <div class="cmd"><pre><code>python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install "pytest&gt;=8"
-python -m pytest -q</code></pre></div>
-        </li>
-        <li><p>Install the TypeScript toolchain (TypeScript, vitest and tsx) from the included lockfile. Do not run <code>npm test</code> yet: with no ported tests it prints <i>No test files found</i> and exits 1, which is expected.</p>
-          <div class="cmd"><pre><code>cd ts &amp;&amp; npm ci &amp;&amp; cd ..</code></pre></div>
-        </li>
-        <li><p>Turn the folder into a git repository with one starting commit. Later labs commit a checkpoint after each port so you can compare and reset, and Week 3's worktree labs need git. The starter's <code>.gitignore</code> already excludes <code>.venv</code> and <code>node_modules</code>. If git asks who you are, set <code>user.name</code> and <code>user.email</code> and rerun the commit.</p>
-          <div class="cmd"><pre><code>git init -q &amp;&amp; git add -A &amp;&amp; git commit -qm "Kestrel starter"
-git log --oneline</code></pre></div>
+        <li><p>Set up the practice project with steps 1 to 3 of the <a href="https://github.com/s3anstanz/scaling-agents#start-in-4-steps" target="_blank" rel="noopener">quick start in the course repo's README</a>. You finish inside a folder called <code>kestrel-starter</code>, and the last command reports <code>142 passed</code>. Came here from the README? This step is already done. No access to the repo? Download the starter with the button on Course home, unzip it, <code>cd kestrel-starter</code>, run the commands in the Setup section of the <code>README.md</code> inside that folder, then run <code>python -m pytest -q</code>.</p>
         </li>
         <li><p>Look at the work before any agent does. The first command prints the dependency waves; the second ends with <code>0/24 modules ported</code>.</p>
           <div class="cmd"><pre><code>python scripts/deps.py --layers
