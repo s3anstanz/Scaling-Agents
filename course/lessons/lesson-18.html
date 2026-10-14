@@ -54,9 +54,9 @@
       <div class="stepper__view">
         <svg viewBox="0 0 720 260" role="img" aria-label="A canary batch of three porters feeds a breaker check, which either releases eleven more porters or stops the wave and alerts a human.">
           <g class="g-node g-node--data" data-node="find"><rect x="20" y="105" width="120" height="50" rx="8"/><text x="80" y="135">status.py</text></g>
-          <g class="g-node g-node--worker" data-node="c1"><rect x="190" y="30" width="120" height="44" rx="8"/><text x="250" y="57">Canary blur</text></g>
-          <g class="g-node g-node--worker" data-node="c2"><rect x="190" y="108" width="120" height="44" rx="8"/><text x="250" y="135">Canary crop</text></g>
-          <g class="g-node g-node--worker" data-node="c3"><rect x="190" y="186" width="120" height="44" rx="8"/><text x="250" y="213">Canary flip</text></g>
+          <g class="g-node g-node--worker" data-node="c1"><rect x="190" y="30" width="120" height="44" rx="8"/><text x="250" y="57">Canary pgm</text></g>
+          <g class="g-node g-node--worker" data-node="c2"><rect x="190" y="108" width="120" height="44" rx="8"/><text x="250" y="135">Canary ppm</text></g>
+          <g class="g-node g-node--worker" data-node="c3"><rect x="190" y="186" width="120" height="44" rx="8"/><text x="250" y="213">Canary blur</text></g>
           <g class="g-node g-node--check" data-node="breaker"><rect x="360" y="105" width="110" height="50" rx="8"/><text x="415" y="135">Breaker</text></g>
           <g class="g-node g-node--worker" data-node="rest"><rect x="530" y="40" width="170" height="50" rx="8"/><text x="615" y="70">11 more porters</text></g>
           <g class="g-node g-node--human" data-node="stop"><rect x="530" y="170" width="170" height="50" rx="8"/><text x="615" y="200">Stop, tell you</text></g>
@@ -74,8 +74,8 @@
       <ol class="stepper__frames">
         <li data-on="find" data-edges="">A scout agent runs <code>scripts/status.py --next</code> and gets the 14 modules of wave L3. Today, unknown to anyone, <code>image.ts</code> has a constructor that throws.</li>
         <li data-on="find,c1,c2,c3" data-edges="e1,e2,e3">Three canaries start: <code>io/pgm</code>, <code>io/ppm</code>, <code>ops/blur</code>. The other eleven wait. Each canary first checks status, so a rerun would skip anything already green.</li>
-        <li data-on="c1" data-edges="r1"><code>blur</code> fails <code>verify.sh</code> and does not spot the cause. It gets a retry with the failing line pasted in, then a second. Still red after the cap of two.</li>
-        <li data-on="c2,c3" data-edges=""><code>crop</code> and <code>flip</code> trace their failures into <code>image.ts</code>. Following the rules, they return <code>blocked</code> without editing it. Blocked modules get no retries.</li>
+        <li data-on="c1" data-edges="r1"><code>io/pgm</code> fails <code>verify.sh</code> and does not spot the cause. It gets a retry with the failing line pasted in, then a second. Still red after the cap of two.</li>
+        <li data-on="c2,c3" data-edges=""><code>io/ppm</code> and <code>ops/blur</code> trace their failures into <code>image.ts</code>. Following the rules, they return <code>blocked</code> without editing it. Blocked modules get no retries.</li>
         <li data-on="c1,c2,c3,breaker" data-edges="e4,e5,e6">The breaker counts three red out of three. 100% is far above the 30% threshold.</li>
         <li data-on="breaker,stop" data-edges="e8">The wave stops. Eleven porters never start. The report names the shared cause, <code>image.ts</code>. You fix it and rerun, and idempotency makes the rerun safe.</li>
         <li data-on="breaker,rest" data-edges="e7">On a healthy day, zero or one canary is red, which is under the threshold, and the other eleven start. The canary cost you a few minutes of wall-clock and nothing else.</li>
@@ -181,7 +181,7 @@
       </ul>
       <div class="c-mcq__fb">
         <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
-        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The error is upstream. No amount of retrying <code>crop</code> fixes <code>image.ts</code>, and the porters are forbidden from editing it. Retries here buy six more failures.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The error is upstream. No amount of retrying <code>ops/blur</code> fixes <code>image.ts</code>, and the porters are forbidden from editing it. Retries here buy six more failures.</p></div>
         <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Three out of three, with the same named dependency, is strong evidence. Starting eleven more agents to confirm it is the exact waste the canary exists to prevent.</p></div>
         <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>The breaker's job is to stop correlated failure early and hand over a clear cause. Fixing a dependency that every op relies on is a decision worth a human glance, and the idempotent rerun picks up from there.</p></div>
         <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Tempting, and sometimes right in a mature system. Here it lets an agent change a module that was green yesterday with nobody looking, mid-wave, based on one error message. A separate, deliberate run to repair <code>image</code> is safer.</p></div>

@@ -241,7 +241,7 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Have Claude write a workflow that ports the ready wave with one cheap agent per module, watch it in <code>/workflows</code>, save it, and run it until the 14-module wave is done.</p>
       <ol class="lab__steps">
-        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Run this from the folder that contains <code>scaling-agents</code> and <code>kestrel-starter</code>: it copies the starter again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one. The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
+        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Run this from the folder that contains <code>scaling-agents</code> and <code>kestrel-starter</code>: it copies the starter again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one. If you set up from the zip instead, unzip it again somewhere else so it does not overwrite your old <code>kestrel-starter</code>, move the unzipped folder here as <code>kestrel-scale</code>, and start at the <code>cd kestrel-scale</code> line. The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
           <div class="cmd"><pre><code>git -C scaling-agents pull -q
 cp -R scaling-agents/kestrel-starter ./kestrel-scale
 cd kestrel-scale
