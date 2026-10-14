@@ -1,0 +1,228 @@
+<section class="lesson" id="lesson-14" data-week="3" data-title="Keeping agents out of each other's way" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 14</span>
+    <span class="meta">Week 3 · Systems</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="10-25">10–25 agents</span>
+  </div>
+  <h1>Keeping agents out of each other's way</h1>
+  <p class="lesson__deck">Parallel agents in one folder are parallel writers on one set of files. This lesson gives each agent its own copy of the repo, gives each file one owner, and turns the shared files into something nobody has to fight over.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Where agents collide</h2>
+  <p>Lesson 12 left one file open on purpose: <code>ts/src/index.ts</code>, the barrel. A <b>barrel</b> is a file that re-exports other modules so users can import everything from one place. Every Kestrel port adds one line to it, such as <code>export * from "./ops/blur"</code>. That makes it a hotspot: a file that every worker needs to change.</p>
+  <p>Kestrel has a few of these, and so does every real codebase.</p>
+  <ul>
+    <li><b>Index and registry files.</b> The barrel. In bigger projects, route tables, plugin lists and dependency-injection setup.</li>
+    <li><b>Shared documents.</b> <code>MIGRATION.md</code> Known traps, <code>PLAN.md</code>.</li>
+    <li><b>Dependency manifests.</b> <code>ts/package.json</code> and its lockfile. One porter that decides to <code>npm install</code> a helper library changes a file all the others build against.</li>
+    <li><b>Generated output.</b> Anything a build step writes, like compiled files or test caches.</li>
+  </ul>
+  <p>There are two kinds of collision. The first is the <b>lost update</b> from Lesson 12: two agents edit the same file and one edit disappears. The second is quieter and does more damage. Agent A runs its tests while agent B is halfway through editing a shared file. A's tests fail for a reason that has nothing to do with A's module. A is a diligent agent, so it goes looking for the cause, finds B's half-finished edit, and "fixes" it. Now two agents are editing the same lines, each sure the other one broke something.</p>
+
+  <h2><span class="h2num">Part two</span>Isolation with worktrees</h2>
+  <p>A git <b>worktree</b> is a second working folder attached to the same repository. It has its own checked-out files on its own branch, and it shares the history with the main folder. Edits in one worktree do not appear in another until you merge branches. Claude Code supports worktrees in three ways.</p>
+  <ul>
+    <li><code>claude --worktree &lt;name&gt;</code> (or <code>-w</code>) starts a whole session in <code>.claude/worktrees/&lt;name&gt;/</code> on a branch called <code>worktree-&lt;name&gt;</code>.</li>
+    <li><code>isolation: worktree</code> in a subagent's frontmatter gives each run of that subagent its own temporary worktree. If the subagent made no changes, the worktree is removed when it finishes.</li>
+    <li>A <code>.worktreeinclude</code> file lists git-ignored files to copy into new worktrees. Kestrel needs it for <code>ts/node_modules</code>, which git ignores and vitest needs.</li>
+  </ul>
+  <p>With isolation, porter A's test run sees only A's edits. The quiet collision from Part one cannot happen, because B's half-finished file is in another folder.</p>
+  <p>Isolation does not remove conflicts, though. It moves them. Concurrent collisions become <b>merge conflicts</b> that appear at one known moment, when you merge the branches back. That is a real improvement, since a merge conflict is visible and stops the process, while a lost update is silent. It still leaves you with something to resolve.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Four porters work in four worktrees. Each one appends its export line to the end of <code>ts/src/index.ts</code> and commits. You merge the four branches into main one after another, resolving each conflict as it comes. How many merge conflicts do you hit?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Three. The first merge is clean, because main has not changed. Every later branch added a different line at the same spot, the end of a file that main has now changed in that same spot, so git cannot choose an order and stops. At 14 porters that is 13 conflicts in one file, each one trivial and each one a stop. The fix is to change who writes the file.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Every file has one owner</h2>
+  <p>Lesson 12's single-writer rule was about shared documents. Apply it to code too. <b>Ownership</b> means each file in the repo has exactly one agent allowed to change it during a run.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Files</th><th>Owner</th><th>Everyone else does</th></tr></thead>
+      <tbody>
+        <tr><td><code>ts/src/&lt;path&gt;.ts</code>, <code>ts/test/&lt;path&gt;.test.ts</code></td><td>the porter for that module</td><td>reads; reports problems</td></tr>
+        <tr><td><code>ts/src/index.ts</code></td><td>the integrator, by script</td><td>never touches it</td></tr>
+        <tr><td><code>MIGRATION.md</code>, <code>PLAN.md</code></td><td>the orchestrator</td><td>reports traps and status in the contract</td></tr>
+        <tr><td><code>ts/package.json</code>, lockfile</td><td>you, the human</td><td>asks in <code>notes</code> if it needs a dependency</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Ownership for a Kestrel run. Notice that no porter owns any file another porter needs to change.</p>
+  <p>The hardest case is a bug in someone else's file. Say the <code>resize</code> porter discovers that <code>ts/src/core/mathutil.ts</code> gets floor division wrong for one input. The owner of <code>mathutil</code> finished long ago. The porter must not fix it in its own worktree, because then its branch carries a change to a file it does not own. It reports <code>status: "blocked"</code> with the failing input, and the orchestrator sends a fix to whoever owns mathutil now.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>.claude/agents/porter.md</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre>---</pre></div></li>
+        <li><div class="cl"><span class="ln">2</span><pre><span class="tk-key">name</span>: porter</pre></div></li>
+        <li><div class="cl"><span class="ln">3</span><pre><span class="tk-key">description</span>: Ports one Kestrel module and its tests from Python to TypeScript.</pre></div></li>
+        <li><div class="cl"><span class="ln">4</span><pre><span class="tk-key">tools</span>: Read, Grep, Glob, Edit, Write, Bash</pre></div></li>
+        <li><div class="cl"><span class="ln">5</span><pre><span class="tk-key">model</span>: sonnet</pre></div></li>
+        <li><div class="cl"><span class="ln">6</span><pre><span class="tk-key">effort</span>: medium</pre></div></li>
+        <li><div class="cl"><span class="ln">7</span><pre><span class="tk-key">maxTurns</span>: 30</pre></div></li>
+        <li><button class="cl" data-note="n6"><span class="ln">8</span><pre><span class="tk-key">isolation</span>: worktree</pre></button></li>
+        <li><div class="cl"><span class="ln">9</span><pre>---</pre></div></li>
+        <li><div class="cl"><span class="ln">10</span><pre>You port exactly one module, named in your task.</pre></div></li>
+        <li><button class="cl" data-note="n9"><span class="ln">11</span><pre>You own two files: ts/src/&lt;path&gt;.ts and ts/test/&lt;path&gt;.test.ts.</pre></button></li>
+        <li><button class="cl" data-note="n10"><span class="ln">12</span><pre>Never edit any other file. Never touch ts/src/index.ts, MIGRATION.md,</pre></button></li>
+        <li><div class="cl"><span class="ln">13</span><pre>PLAN.md, ts/package.json or the lockfile, and never run npm install.</pre></div></li>
+        <li><button class="cl" data-note="n12"><span class="ln">14</span><pre>If a module you import is wrong, stop with status blocked and the failing</pre></button></li>
+        <li><div class="cl"><span class="ln">15</span><pre>input. Do not fix it and do not work around it in your own file.</pre></div></li>
+        <li><div class="cl"><span class="ln">16</span><pre>Report new traps on your TRAPS line; the orchestrator records them.</pre></div></li>
+        <li><button class="cl" data-note="n15"><span class="ln">17</span><pre>When scripts/verify.sh kestrel/&lt;path&gt;.py exits 0, commit your two files</pre></button></li>
+        <li><div class="cl"><span class="ln">18</span><pre>on your worktree branch with the message "port &lt;path&gt;".</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line. The frontmatter matches the <code>porter.md</code> you wrote in Lesson 8 plus line 8. The body shows only what this lesson adds; your six-line report format (MODULE, VERIFY, RUNS, TRAPS, FILES, NOTES) stays below it.</p></div>
+        <div class="cnote" data-note="n6"><div class="label">Line 8 · isolation</div><p>Every time this subagent runs, Claude Code creates a temporary worktree for it. Its edits and test runs stay in that folder until you merge its branch. If it changed nothing, the worktree is cleaned up.</p></div>
+        <div class="cnote" data-note="n9"><div class="label">Line 11 · ownership, stated positively</div><p>The porter learns what it owns before it learns what it must not touch. Agents follow a short explicit list more reliably than a vague "stay in your lane".</p></div>
+        <div class="cnote" data-note="n10"><div class="label">Lines 12–13 · the hotspots by name</div><p>Name every shared file. The <code>npm install</code> ban protects the lockfile, which is the hotspot people forget until two branches each add a different package.</p></div>
+        <div class="cnote" data-note="n12"><div class="label">Lines 14–15 · blocked, with a failing input</div><p>Both bad options are tempting to an agent: fix the other module, or copy a corrected <code>floorDiv</code> into its own file. The first breaks ownership; the second hides the bug and leaves two versions of the same function. Blocked plus a failing input sends the problem to the right owner.</p></div>
+        <div class="cnote" data-note="n15"><div class="label">Lines 17–18 · commit on green</div><p>The branch is the handoff. A commit only after <code>verify.sh</code> exits 0 means every branch you merge has passed its own check, so a failure after merging points at integration.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Three ways to merge</h2>
+  <p>Ownership leaves one question: who writes the hotspot files, and how? There are three strategies. Prefer them in this order.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Strategy</th><th>How it works</th><th>Kestrel example</th><th>Trade-off</th></tr></thead>
+      <tbody>
+        <tr><td>Regenerate from the source of truth</td><td>A script rebuilds the file from what exists in the repo</td><td><code>scripts/gen_barrel.py</code> writes one export line per file in <code>ts/src/</code></td><td>Deterministic and free; only works when the file can be derived</td></tr>
+        <tr><td>One file per writer</td><td>Each writer appends to its own file; a reader combines them</td><td><code>results/&lt;module&gt;.json</code> from Lesson 12</td><td>No conflicts possible; someone must combine</td></tr>
+        <tr><td>Integrator agent</td><td>One agent merges branches in order and resolves conflicts with full view</td><td>An integrator merges 14 porter branches and fixes clashes in shared helpers</td><td>Handles anything; serial, costs tokens, and its judgment can be wrong</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Prefer a script over a convention, and a convention over an agent. Use an integrator agent for what is left.</p>
+  <p>The barrel is the textbook case for regeneration. Its content is fully determined by which TypeScript files exist. A ten-line script produces it, and running the script twice gives the same file. Nobody needs to edit it by hand, so nobody should.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 280" role="img" aria-label="An orchestrator starts four porters in worktrees; their branches merge; the barrel conflicts until an integrator regenerates it">
+          <g class="g-node g-node--orch" data-node="orch"><rect x="20" y="118" width="120" height="44" rx="8"/><text x="80" y="145">Orchestrator</text></g>
+          <g class="g-node g-node--worker" data-node="w1"><rect x="230" y="20" width="120" height="44" rx="8"/><text x="290" y="47">Porter 1</text></g>
+          <g class="g-node g-node--worker" data-node="w2"><rect x="230" y="85" width="120" height="44" rx="8"/><text x="290" y="112">Porter 2</text></g>
+          <g class="g-node g-node--worker" data-node="w3"><rect x="230" y="150" width="120" height="44" rx="8"/><text x="290" y="177">Porter 3</text></g>
+          <g class="g-node g-node--worker" data-node="w4"><rect x="230" y="215" width="120" height="44" rx="8"/><text x="290" y="242">Porter 4</text></g>
+          <g class="g-node g-node--check" data-node="merge"><rect x="430" y="56" width="120" height="44" rx="8"/><text x="490" y="83">git merge</text></g>
+          <g class="g-node g-node--data" data-node="idx"><rect x="600" y="56" width="110" height="44" rx="8"/><text x="655" y="83">index.ts</text></g>
+          <g class="g-node g-node--worker" data-node="integ"><rect x="430" y="180" width="120" height="44" rx="8"/><text x="490" y="207">Integrator</text></g>
+          <path class="g-edge" data-edge="e1" d="M140 130 L230 42"/>
+          <path class="g-edge" data-edge="e2" d="M140 137 L230 107"/>
+          <path class="g-edge" data-edge="e3" d="M140 147 L230 172"/>
+          <path class="g-edge" data-edge="e4" d="M140 154 L230 237"/>
+          <path class="g-edge" data-edge="m1" d="M350 42 L430 66"/>
+          <path class="g-edge" data-edge="m2" d="M350 107 L430 74"/>
+          <path class="g-edge" data-edge="m3" d="M350 172 L430 84"/>
+          <path class="g-edge" data-edge="m4" d="M350 237 L430 92"/>
+          <path class="g-edge" data-edge="b1" d="M550 78 L600 78"/>
+          <path class="g-edge" data-edge="b0" d="M490 100 L490 180"/>
+          <path class="g-edge" data-edge="b2" d="M550 202 C 600 202, 655 160, 655 100"/>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="orch,w1,w2,w3,w4" data-edges="e1,e2,e3,e4">The orchestrator starts four porters. Because <code>porter.md</code> says <code>isolation: worktree</code>, each one gets its own folder under <code>.claude/worktrees/</code> on its own branch.</li>
+        <li data-on="w1,w2,w3,w4" data-edges="">Each porter edits its module files and appends a line to its own copy of <code>index.ts</code>. Inside the worktrees nothing collides, and every test run sees only that porter's edits.</li>
+        <li data-on="w1,merge,idx" data-edges="m1,b1">Porter 1's branch merges first. Main has not changed yet, so the merge is clean.</li>
+        <li data-on="w2,merge,idx" data-edges="m2,b1">Porter 2's branch also added a line at the end of <code>index.ts</code>, where main now has porter 1's line. Git stops with a conflict. Porters 3 and 4 will do the same.</li>
+        <li data-on="w1,w2,w3,w4" data-edges="">Redesign: each porter owns its two files and nothing else. No porter touches <code>index.ts</code>.</li>
+        <li data-on="w1,w2,w3,w4,merge" data-edges="m1,m2,m3,m4">Now no two branches change the same file, so all four merge cleanly, in any order.</li>
+        <li data-on="merge,integ,idx" data-edges="b0,b2">The integrator runs <code>python scripts/gen_barrel.py</code>, which writes <code>index.ts</code> from the files that exist, then runs the full test suite once.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>The <code>resize</code> porter, in its worktree, finds that <code>ts/src/core/mathutil.ts</code> returns the wrong result for <code>floorDiv(-7, 2)</code>. Its own tests fail because of it. What should it do?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Fix <code>mathutil.ts</code> in its worktree and commit it with the resize port.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Write a correct local floor division inside <code>resize.ts</code> and move on.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Stop with <code>status: "blocked"</code>, the failing input and expected value, and let the orchestrator route a fix to mathutil.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Edit <code>mathutil.ts</code> in the main folder, outside its worktree, so every porter gets the fix right away.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Now the resize branch changes a file it does not own. If the rotate porter hit the same bug and fixed it differently, you get a merge conflict in <code>mathutil.ts</code>, or worse, two fixes that merge cleanly and disagree.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>The resize tests pass, the bug in mathutil survives, and Kestrel now has two floor-division functions. The next porter that imports mathutil hits the same bug and makes the same choice.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>The contract's <code>blocked</code> status exists for this. One owner fixes mathutil once, its own tests gain a case for <code>-7, 2</code>, and resize retries against the fixed version. A failing input is what makes the report actionable.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>This brings back exactly the collision worktrees removed: an unowned edit in the shared folder while other agents are working. It also bypasses <code>mathutil</code>'s verify gate.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-14">
+    <div class="lab__head">
+      <span class="label">Lab 14 · In Claude Code</span>
+      <span class="lab__meta">~25 min · est. $1.50–$4.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run four worktree-isolated porters, watch the barrel conflict at merge time, then remove it with ownership rules and a regenerated barrel.</p>
+      <ol class="lab__steps">
+        <li><p>Make a throwaway copy with its own git history, so branches and resets cannot touch your real repo. Run this from the folder that contains <code>kestrel-starter</code>. The last line disables your Lesson 4 Stop gate in the copy only, because the copy is deliberately half-broken while you work.</p>
+          <div class="cmd"><pre><code>rm -rf kestrel-l14 &amp;&amp; cp -r kestrel-starter kestrel-l14 &amp;&amp; cd kestrel-l14
+rm -rf .git
+printf 'ts/node_modules/\n__pycache__/\n.pytest_cache/\n' &gt;&gt; .gitignore
+printf 'ts/node_modules/\n' &gt; .worktreeinclude
+rm -f .claude/settings.local.json</code></pre></div>
+        </li>
+        <li><p>Open <code>.claude/agents/porter.md</code> in the copy and add <code>isolation: worktree</code> to its frontmatter. Then remove four ops and commit a starting point you can return to.</p>
+          <div class="cmd"><pre><code>for m in invert flip contrast brightness; do
+  rm -f ts/src/ops/$m.ts ts/test/ops/$m.test.ts
+  grep -v "/ops/$m\"" ts/src/index.ts &gt; ts/src/index.tmp &amp;&amp; mv ts/src/index.tmp ts/src/index.ts
+done
+git init -q &amp;&amp; git add -A &amp;&amp; git commit -qm "lab 14 start" &amp;&amp; git tag lab14-start</code></pre></div>
+        </li>
+        <li><p>Part A, the naive design. Start a session and send the porters out. Approve the <code>git</code> commands when asked, or add <code>Bash(git *)</code> to the allow list in the copy's settings.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Use four porter agents in parallel, one each for kestrel/ops/invert.py, kestrel/ops/flip.py, kestrel/ops/contrast.py and kestrel/ops/brightness.py. Each porter appends its module's export line to ts/src/index.ts as usual, and when scripts/verify.sh passes it commits everything it changed on its worktree branch. When all four are done, run `git branch` and merge the four branches into the current branch one at a time with `git merge --no-edit`. Stop at the first merge conflict, show me the conflicting hunk, and do not resolve it.</code></pre></div>
+        </li>
+        <li><p>Look at the conflict, then go back to the start. List leftover worktrees and remove each one under <code>.claude/worktrees/</code> with <code>git worktree remove --force &lt;path&gt;</code>.</p>
+          <div class="cmd"><pre><code>git merge --abort
+git reset --hard lab14-start
+git worktree list</code></pre></div>
+        </li>
+        <li><p>Part B, the fixed design. Create the barrel generator.</p>
+          <div class="cmd" data-file="scripts/gen_barrel.py"><pre><code>from pathlib import Path
+
+src = Path("ts/src")
+lines = [
+    f'export * from "./{p.relative_to(src).with_suffix("").as_posix()}";'
+    for p in sorted(src.rglob("*.ts"))
+    if p.name != "index.ts"
+]
+(src / "index.ts").write_text("\n".join(lines) + "\n")
+print(f"{len(lines)} exports written to ts/src/index.ts")</code></pre></div>
+        </li>
+        <li><p>Edit the body of <code>porter.md</code>: delete the instruction to append an export line to <code>ts/src/index.ts</code>, and add lines 10 to 18 of the annotated file above, keeping your report format. Commit both changes, then run the same four ports with an integrator at the end.</p>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "ownership rules and barrel generator"
+claude --model opus</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Use four porter agents in parallel, one each for kestrel/ops/invert.py, kestrel/ops/flip.py, kestrel/ops/contrast.py and kestrel/ops/brightness.py. They follow their ownership rules and commit only their own two files. When all four are done, merge their branches one at a time with `git merge --no-edit` and report each result. Then act as the integrator: run `python scripts/gen_barrel.py`, run `npx vitest run` inside ts/, run `python scripts/status.py`, and commit the barrel with the message "regenerate barrel".</code></pre></div>
+        </li>
+        <li><p>Carry the fix home. Copy the generator into your real repo and in its <code>porter.md</code> replace the barrel instruction with lines 11 to 16 of the annotated file. Week 4 runs many more porters and depends on both.</p>
+          <div class="cmd"><pre><code>cp scripts/gen_barrel.py ../kestrel-starter/scripts/
+cd ../kestrel-starter &amp;&amp; python scripts/gen_barrel.py &amp;&amp; (cd ts &amp;&amp; npx vitest run)</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>In Part A, four worktrees appear under <code>.claude/worktrees/</code>, all four porters pass, the first merge succeeds, and the second stops on <code>ts/src/index.ts</code> with two different export lines in one conflict hunk. In Part B, all four merges are clean, the generator reports one export per TypeScript file, and the full vitest run and <code>status.py</code> both pass. In your real repo the regenerated barrel may list exports in a new order; the tests should still pass.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Make a porter break the rules on purpose: tell one of the four to also "tidy up" <code>ts/src/core/color.ts</code>. Then write a check the integrator runs before merging, using <code>git diff --name-only lab14-start..&lt;branch&gt;</code>, that rejects any branch touching a file outside its module. Ownership you can check beats ownership you only ask for.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Worktrees turn silent collisions into visible merge conflicts. Ownership and a regenerated barrel remove the conflicts themselves: each worker writes only its own files, and shared files are produced by a script or a single integrator.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 15 · Testing a team. Every module passes its own tests; now find out whether the whole pipeline produces the same bytes as Python.</div>
+</section>

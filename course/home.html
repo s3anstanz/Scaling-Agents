@@ -1,0 +1,70 @@
+<div class="home view" id="home" data-view>
+  <div class="hero">
+    <div>
+      <div class="hero__kicker">Scaling Agents · a hands-on course in Claude Code · 20 lessons</div>
+      <h1>From one agent<br>to <em>one hundred</em></h1>
+      <p class="hero__deck">Start with a single agent working in a loop. Finish by designing a hundred agents that port a whole codebase together. Along the way you learn the two skills that decide whether a team of agents works: engineering the loops and engineering the graph.</p>
+      <div class="hero__cta">
+        <a class="btn" href="#lesson-01">Start Lesson 01</a>
+        <a class="btn btn--ghost" id="resume-link" href="#home" hidden>Resume</a>
+        <a class="btn btn--ghost" href="#reference">Reference sheet</a>
+      </div>
+    </div>
+    <figure class="ladder" style="margin:0">
+      {{LADDER}}
+    </figure>
+  </div>
+
+  <div class="home-grid">
+    <div class="card">
+      <div class="label">The project</div>
+      <h2>Port Kestrel to TypeScript</h2>
+      <p>Kestrel is a made-up open-source image-processing library written in Python. The full library has about 240 modules. Your job, from the first lesson to the last, is to move it to TypeScript without changing what any function does.</p>
+      <p>A migration is a good teacher. It starts small enough for one agent, it has real dependencies between pieces, and the tests tell you exactly when a piece is right. At 240 modules, it's also big enough that a hundred agents is a real question rather than a stunt.</p>
+    </div>
+    <div class="card">
+      <div class="label">How each lesson works</div>
+      <h2>Read, predict, then run it</h2>
+      <ul>
+        <li>Short parts that build one idea at a time, from novice to expert.</li>
+        <li>Predict-then-reveal prompts, multiple choice and make-the-call exercises. Every answer explains itself.</li>
+        <li>Diagrams you can step through, so you see a loop or a graph run.</li>
+        <li>A lab in Claude Code against your own copy of Kestrel, with copy buttons and an estimated cost.</li>
+      </ul>
+    </div>
+    <div class="card card--accent">
+      <div class="label">Before Lesson 01</div>
+      <h2>Get the practice repo</h2>
+      <p>A 24-module slice of Kestrel: Python source and tests, an empty TypeScript project, and the scripts the labs use (<code>deps.py</code>, <code>status.py</code>, <code>verify.sh</code>, <code>difftest.py</code>). It lives in the course repo; Lab 01 copies it into its own folder.</p>
+      <div class="cmd"><pre><code>git clone https://github.com/s3anstanz/scaling-agents.git
+cp -R scaling-agents/kestrel-starter ./kestrel-starter</code></pre></div>
+      <p>No access to the repo? Download the same starter as a zip.</p>
+      <div class="btn-row"><button class="btn btn--ghost" id="dl-btn" type="button" disabled>Download kestrel-starter.zip</button></div>
+      <p class="dl-status" id="dl-status" aria-live="polite">Checking whether this view can save files…</p>
+      <p>You also need Claude Code, Python 3.11 or newer, Node 22.12 or newer, and git.</p>
+    </div>
+  </div>
+
+  <div class="home-grid">
+    <div class="card">
+      <div class="label">Thread one · all four weeks</div>
+      <h2>Loop engineering</h2>
+      <p>Every agent is a loop: look, act, check, repeat. You will design when a loop stops, what it can spend, what counts as done, and how loops between agents (write, review, fix) settle instead of bouncing forever. At scale, loops become retries, circuit breakers and budgets.</p>
+    </div>
+    <div class="card">
+      <div class="label">Thread two · all four weeks</div>
+      <h2>Graph engineering</h2>
+      <p>Every team is a graph: agents are the nodes, handoffs are the edges. You will learn the shapes (chain, diamond, double diamond, tree, dependency graph, cycle), when each one fits, and how the shape of the work sets how many agents can help at once.</p>
+    </div>
+    <div class="card">
+      <div class="label">What it costs</div>
+      <h2>Small labs, real runs</h2>
+      <p>Each lab shows an estimated cost and uses hard caps (<code>--max-budget-usd</code>, <code>--max-turns</code>). Week 4 runs 10 to 20 agents on a cheap worker model against the 24-module starter, then works out what changes at 100 agents and 240 modules. Costs are estimates; check <code>/usage</code> as you go.</p>
+    </div>
+  </div>
+
+  <section class="roadmap" aria-labelledby="rm-h">
+    <div class="roadmap__head"><h2 id="rm-h">The four weeks</h2><span class="label">Each week adds roughly one order of magnitude</span></div>
+    <div class="roadmap__grid" id="roadmap-grid"></div>
+  </section>
+</div>

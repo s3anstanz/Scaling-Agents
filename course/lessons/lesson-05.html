@@ -1,0 +1,249 @@
+<section class="lesson" id="lesson-05" data-week="1" data-title="One module end to end, and when one agent is enough" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 05</span>
+    <span class="meta">Week 1 · One agent</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="1">1 agent</span>
+  </div>
+  <h1>One module end to end, and when one agent is enough</h1>
+  <p class="lesson__deck">Put the week together into one repeatable recipe, run it on two modules, and record a baseline. Then decide, with the baseline in hand, when a second agent would actually help.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The single-agent recipe</h2>
+  <p>Four lessons, four ingredients. Each one fixed a specific way a single agent goes wrong, and together they make a run you can repeat, measure and trust.</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Ingredient</th><th>On Kestrel</th><th>Prevents</th><th>Lesson</th></tr></thead>
+    <tbody>
+      <tr><td><b>A context file</b></td><td><code>CLAUDE.md</code> points to <code>MIGRATION.md</code>, which holds the naming rules and the Known traps</td><td>Inconsistent ports; rediscovering T1 and T2 in every module</td><td>03</td></tr>
+      <tr><td><b>A bounded loop</b></td><td>A prompt naming the success check and the no-progress rule; <code>--max-turns 20</code></td><td>Stopping early, never stopping, thrashing</td><td>02</td></tr>
+      <tr><td><b>A verification gate</b></td><td><code>scripts/stop_gate.py</code> as a Stop hook, backed by <code>scripts/status.py</code> and <code>scripts/verify.sh</code></td><td>Confident reports on failing code</td><td>04</td></tr>
+      <tr><td><b>A cost cap and a record</b></td><td><code>--max-budget-usd 1</code>, <code>--output-format json</code>, timed runs in <code>notes/runs/</code></td><td>Runaway spend; guessing instead of measuring</td><td>02</td></tr>
+    </tbody>
+  </table></div>
+  <p>One more rule ties them together: <b>work in dependency order</b>. Each run ports one module whose dependencies are already ported and passing. <code>python scripts/status.py --next</code> lists exactly those. A run that starts on a module with missing dependencies tends to widen its own scope, which is the never-stopping failure from Lesson 02.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 250" role="img" aria-label="The single-agent recipe: the context file, the prompt with its exit check, and the caps feed one agent; the agent checks its work with verify.sh, the stop gate sends it back on failure, and a passing run leaves a run record">
+      <g class="g-node g-node--data" data-node="mig"><rect x="20" y="30" width="140" height="44" rx="8"/><text x="90" y="57">MIGRATION.md</text></g>
+      <g class="g-node g-node--human" data-node="prompt"><rect x="20" y="100" width="140" height="44" rx="8"/><text x="90" y="127">Task + check</text></g>
+      <g class="g-node g-node--data" data-node="caps"><rect x="20" y="170" width="140" height="44" rx="8"/><text x="90" y="197">Turn + $ caps</text></g>
+      <g class="g-node g-node--worker" data-node="agent"><rect x="240" y="95" width="140" height="54" rx="8"/><text x="310" y="127">One agent</text></g>
+      <g class="g-node g-node--check" data-node="verify"><rect x="440" y="40" width="120" height="44" rx="8"/><text x="500" y="67">verify.sh</text></g>
+      <g class="g-node g-node--check" data-node="gate"><rect x="440" y="150" width="120" height="44" rx="8"/><text x="500" y="177">Stop gate</text></g>
+      <g class="g-node g-node--data" data-node="record"><rect x="600" y="100" width="110" height="44" rx="8"/><text x="655" y="127">Run record</text></g>
+      <path class="g-edge" d="M160 52 C 200 52, 200 112, 240 112"/>
+      <path class="g-edge" d="M160 122 L240 122"/>
+      <path class="g-edge" d="M160 192 C 200 192, 200 132, 240 132"/>
+      <path class="g-edge" d="M380 110 C 410 110, 410 62, 440 62"/>
+      <path class="g-edge" d="M380 134 C 410 134, 410 172, 440 172"/>
+      <path class="g-edge" d="M560 172 C 580 172, 580 122, 600 122"/>
+      <path class="g-edge g-edge--loop" d="M500 194 C 500 235, 310 235, 310 149"/>
+      <text class="g-cap" x="405" y="246">exit 2: back to work</text>
+    </svg>
+    <figcaption>Three inputs shape the run, two checks guard its exit, and every run leaves a record you can compare against later.</figcaption>
+  </figure>
+
+  <h2><span class="h2num">Part two</span>Running it on image and blur</h2>
+  <p>After Lab 04 you have <code>errors</code>, <code>mathutil</code>, <code>color</code> and <code>geometry</code>. That makes <code>kestrel/core/image.py</code> ready: it imports <code>color</code>, <code>geometry</code> and <code>errors</code>, all ported. <code>image</code> is the hub of the library. All twelve <code>ops/</code> modules and both <code>io/</code> modules import it, so its API (the <code>Image</code> class, <code>blank</code>, <code>get</code>, <code>with_pixels</code>, <code>rows</code>) becomes a contract that fourteen later ports depend on. Getting its names right, per <code>MIGRATION.md</code>, matters more here than anywhere else in Week 1.</p>
+  <p>With <code>image</code> ported, <code>ops/blur.py</code> becomes ready. This is the module from Lesson 04's story, and it carries trap T1: every channel average goes through <code>round_half_even</code>. This time the Known traps entry you wrote in Lab 03 is in the contract, and the gate is in place behind it. You will see whether the agent gets it right first time, and how much cheaper the run is when it does.</p>
+  <p>The gate lives in your project settings, so it also runs at the end of headless runs. A headless run that tries to finish with a failing module gets sent back once, exactly like an interactive one.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Of the modules you will have ported by the end of this lab (<code>errors</code>, <code>mathutil</code>, <code>color</code>, <code>geometry</code>, <code>image</code>, <code>blur</code>), which do you expect to be the most expensive, and why?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Most likely <code>image</code>. Cost follows two things: how much the agent has to read and write, and how many times it goes around the loop. <code>image</code> has the largest API, the most validation logic and tests, and it imports three ported modules whose TypeScript names it must read and use. <code>errors</code> should be the cheapest. <code>mathutil</code> and <code>blur</code> are small, but a trap that bites adds iterations, and each iteration costs more than the last because the context keeps growing. If <code>blur</code> comes in cheap, that is the Known traps entry paying for itself.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>The baseline</h2>
+  <p>A <b>baseline</b> is the measured performance of the simplest working setup, the thing every fancier setup has to beat. For this course it is one agent, one module per run, <code>sonnet</code>, with the recipe above. Week 2 will run three agents in parallel and change models, and every claim it makes (faster, cheaper, more reliable) is a comparison against this table.</p>
+  <p>Record four numbers per module. Turns and cost come from the JSON output. Minutes come from the timer around each run. The last column says how the run ended, which is where a cap would show up.</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>module</th><th>turns</th><th>cost (USD)</th><th>minutes</th><th>ended as</th></tr></thead>
+    <tbody>
+      <tr><td>errors</td><td>your number</td><td>your number</td><td>your number</td><td>from the JSON</td></tr>
+      <tr><td>mathutil</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+      <tr><td>color</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+      <tr><td>geometry</td><td>n/a (interactive)</td><td>from <code>/usage</code></td><td>includes your typing</td><td>interactive</td></tr>
+      <tr><td>image</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+      <tr><td>blur</td><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">The shape of <code>notes/baseline.md</code>. The lab generates it from your run records.</p>
+  <p>Two cautions when you read your own table. First, six runs is a small sample; the same prompt can take noticeably different paths on a second run. Treat the numbers as a rough scale. Second, the sum of the minutes column is your sequential wall-clock for Week 1. Multiply the average by 24 and you have a rough time to port the whole starter one module at a time. Multiply by 240 for the story's full library. That second number is the argument for the rest of the course.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Wave L3 has 14 modules (the twelve ops plus <code>io/ppm</code> and <code>io/pgm</code>), and none depends on another. You have the baseline. If you ran 14 agents at once, one per module, what is the best estimate?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Cost about the same as one module, because the agents share the work.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">Cost at least 14 times the average module, plus coordination; wall-clock close to the slowest single module, plus coordination.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Cost 14 times the average module; wall-clock exactly the average module time.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">No useful estimate is possible until you run it.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Parallel agents do not share a context or a bill. Each one reads its own files and runs its own loop. Fourteen agents cost at least fourteen ports.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>Each module still costs what it costs, and someone has to split the work, collect the reports and deal with shared files like <code>ts/src/index.ts</code>. A parallel wave finishes when its slowest member does, and module times vary. Parallelism buys wall-clock time and charges for it in tokens.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Close on cost, wrong on time. A wave waits for its slowest agent, not its average one, and the coordination work is new and comes on top.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Making this estimate possible is the reason you recorded a baseline. It will be rough, but rough is enough to decide whether a team is worth trying.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>When one agent is enough</h2>
+  <p>A single agent with this recipe is a strong default. It is the cheapest setup, the easiest to debug, and every decision in it is made with full context. Add agents only when one of four signals appears.</p>
+  <ol>
+    <li><b>Context overflow.</b> The task needs more than one window can hold well. <code>pipeline/steps.py</code> imports all twelve ops; an agent that needs to understand all of them at once, plus the steps code, plus test output, is a candidate for splitting the reading across helpers that return summaries.</li>
+    <li><b>Independent parallel work.</b> Units that do not depend on each other. Wave L3 is fourteen modules with no edges between them. Waves L0 to L2 are a chain; there, nothing can run in parallel.</li>
+    <li><b>A need for independent judgement.</b> A check by someone who did not do the work. Lesson 04 showed that the porting agent also ports the tests; a reviewer with a fresh context and no edit tools can catch a weakened test that the author never will.</li>
+    <li><b>Wall-clock pressure.</b> The sequential estimate from your baseline is longer than you can wait. If 24 modules at your average time is a working day, that matters; at 240 modules it decides the project.</li>
+  </ol>
+  <p>The opposite signal matters as much. Anthropic's write-up of its <a href="https://www.anthropic.com/engineering/multi-agent-research-system">multi-agent research system</a> found that a lead agent with parallel subagents beat a single agent by 90.2% on their internal research evaluation. The same post reports that agents use about 4 times the tokens of chat and multi-agent systems about 15 times, and that multi-agent setups fit poorly when agents need shared context or have many dependencies between them, which includes most coding tasks.</p>
+  <p>That last point is the reason this course spends Week 3 on dependency graphs, contracts and isolation. A migration is coding, so by default it is the kind of task where many agents do badly. It becomes parallel only after you find the structure that lets pieces proceed independently: <code>scripts/deps.py</code> for the order, <code>MIGRATION.md</code> for the shared rules, <code>verify.sh</code> for a check each piece can pass alone. When work is tightly coupled, one agent with the whole picture is usually both cheaper and better.</p>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="one">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Next on your list is <code>analysis/stats.py</code>.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>Its only dependency, <code>ops/histogram</code>, is ported and passing.</li><li>It is one small module with its own tests.</li><li>No deadline; you would like it done today.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="one">One agent</button>
+        <button class="vbtn" data-pick="team">A team</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="one"><span class="verdict-tag" data-v="pass">Right call</span><p>None of the four signals is present. It fits in one context, there is nothing to parallelize, the tests are the independent judge, and there is no time pressure. A team would cost several times more for the same result.</p></div>
+        <div class="vfb" data-for="team"><span class="verdict-tag" data-v="fail">Not quite</span><p>There is nothing to split. A planner, a porter and a reviewer for one small module triple the tokens and add handoffs, and the tests already provide the independent check.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="team">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Your manager wants all of wave L3 ported by tomorrow morning.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li><code>image</code>, <code>color</code>, <code>geometry</code>, <code>mathutil</code> and <code>errors</code> are ported and passing.</li><li>The 14 L3 modules depend only on those, not on each other.</li><li>Your baseline says one module at a time would take most of a working day.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="one">One agent</button>
+        <button class="vbtn" data-pick="team">A team</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="one"><span class="verdict-tag" data-v="fail">Not quite</span><p>One agent will get there, but it misses the deadline you were given, and a single session porting fourteen modules suffers context rot. At minimum you would run fourteen separate sessions, one after another.</p></div>
+        <div class="vfb" data-for="team"><span class="verdict-tag" data-v="pass">Right call</span><p>Two signals at once: independent parallel work and wall-clock pressure. The contract and per-module check already exist. Expect to pay more in tokens and to deal with one shared file, the barrel <code>ts/src/index.ts</code>, which Week 3 covers.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="one">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Halfway through the ops, you decide the TypeScript <code>Image</code> should store pixels as a flat typed array instead of an array of tuples.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>The change is to <code>ts/src/core/image.ts</code>, whose API every ported op uses.</li><li>Seven ops are already ported and read pixels directly.</li><li>Every op's tests must still pass afterwards.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="one">One agent</button>
+        <button class="vbtn" data-pick="team">A team</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="one"><span class="verdict-tag" data-v="pass">Right call</span><p>This is tightly coupled work: one shared contract and every consumer of it, changing together. It is exactly the case where multi-agent setups fit poorly. One agent holding the new <code>Image</code> design and applying it consistently across seven files will do better than seven agents each guessing at it.</p></div>
+        <div class="vfb" data-for="team"><span class="verdict-tag" data-v="fail">Not quite</span><p>Seven files looks parallel, but every edit depends on one design decision in <code>image.ts</code>. Split it and each agent needs the full shared context anyway, and they will drift apart in small ways the tests may not catch.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-05">
+    <div class="lab__head">
+      <span class="label">Lab 05 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $0.50–$2.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port <code>core/image</code> and <code>ops/blur</code> with the full recipe, then turn your run records into <code>notes/baseline.md</code>.</p>
+      <ol class="lab__steps">
+        <li><p>From the repo root, activate the environment, confirm the tree is clean, and check what is ready. <code>--next</code> should list <code>core/image</code>.</p>
+          <div class="cmd"><pre><code>source .venv/bin/activate
+git status --short
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Port <code>image</code> with the full recipe. The Stop hook from Lab 04 is active for this run.</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude -p "Port kestrel/core/image.py to TypeScript at ts/src/core/image.ts and its tests from tests/core/test_image.py to ts/test/core/image.test.ts. Follow MIGRATION.md, including its Known traps, and import from the modules already ported in ts/src/core/ instead of reimplementing them. Add the module's export line to ts/src/index.ts and do not edit any other module's files. Run scripts/verify.sh kestrel/core/image.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with three lines: what you ported, how many verify runs it took, and any trap you met." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/image.json
+echo "image $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
+python scripts/runinfo.py notes/runs/image.json
+scripts/verify.sh kestrel/core/image.py; echo "exit=$?"</code></pre></div>
+        </li>
+        <li><p>Checkpoint, confirm <code>ops/blur</code> is now ready, and port it the same way.</p>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 05: port image"
+python scripts/status.py --next
+start=$SECONDS
+claude -p "Port kestrel/ops/blur.py to TypeScript at ts/src/ops/blur.ts and its tests from tests/ops/test_blur.py to ts/test/ops/blur.test.ts. Follow MIGRATION.md, including its Known traps, and import from the modules already ported in ts/src/core/ instead of reimplementing them. Add the module's export line to ts/src/index.ts and do not edit any other module's files. Run scripts/verify.sh kestrel/ops/blur.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with three lines: what you ported, how many verify runs it took, and any trap you met." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/blur.json
+echo "blur $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
+python scripts/runinfo.py notes/runs/blur.json
+scripts/verify.sh kestrel/ops/blur.py; echo "exit=$?"
+grep -n -i -E "round" ts/src/ops/blur.ts</code></pre></div>
+        </li>
+        <li><p>Create a script that turns the run records into the baseline table. It skips the bare-mode experiment from Lab 03, and marks the interactive <code>geometry</code> session, which has no JSON record.</p>
+          <div class="cmd" data-file="scripts/baseline.py"><pre><code>import json
+from pathlib import Path
+
+RUNS = Path("notes/runs")
+
+rows = [
+    "| module | turns | cost (USD) | minutes | ended as |",
+    "|---|---|---|---|---|",
+]
+for line in (RUNS / "seconds.txt").read_text().splitlines():
+    name, seconds = line.split()
+    if name.endswith("-bare"):
+        continue
+    record = RUNS / f"{name}.json"
+    run = json.loads(record.read_text()) if record.exists() else {}
+    cost = run.get("total_cost_usd")
+    cost_cell = f"{cost:.2f}" if cost is not None else "from /usage"
+    rows.append(
+        f"| {name} | {run.get('num_turns', 'n/a')} | {cost_cell} "
+        f"| {int(seconds) / 60:.1f} | {run.get('subtype', 'interactive')} |"
+    )
+
+table = "\n".join(rows)
+Path("notes/baseline.md").write_text(
+    "# Week 1 baseline: one agent per module, sonnet\n\n" + table + "\n"
+)
+print(table)</code></pre></div>
+        </li>
+        <li><p>Generate the baseline, then open <code>notes/baseline.md</code> and replace <code>from /usage</code> in the <code>geometry</code> row with the figure you noted in Lab 04.</p>
+          <div class="cmd"><pre><code>python scripts/baseline.py</code></pre></div>
+        </li>
+        <li><p>Confirm the whole week passes, then checkpoint. <code>status.py</code> should show six modules ported and passing.</p>
+          <div class="cmd"><pre><code>python scripts/status.py
+echo '{"stop_hook_active": false}' | python scripts/stop_gate.py; echo "exit=$?"
+git add -A &amp;&amp; git commit -qm "lab 05: port blur, record baseline"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Both runs finish under their caps with <code>exit=0</code>. The <code>image</code> run is likely your most expensive so far. In <code>blur.ts</code>, the <code>grep</code> should show the channel averages going through the rounding helper imported from <code>mathutil</code>, with no bare <code>Math.round</code>; if the agent mentions the Known traps entry in its report, that is the contract doing its job. <code>notes/baseline.md</code> holds one row per module, six in all. <code>status.py</code> lists <code>core/errors</code>, <code>core/mathutil</code>, <code>core/color</code>, <code>core/geometry</code>, <code>core/image</code> and <code>ops/blur</code> as ported with passing tests, and the gate prints <code>exit=0</code>. Keep everything: Week 2 starts from this state and compares against this table.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Add a line under the table in <code>notes/baseline.md</code> with your average minutes per module, times 24 (the starter) and times 240 (the full story library), labelled as estimates. Then list the modules <code>status.py --next</code> shows now. That list is the work a team could start on in parallel.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Context file, bounded loop, verification gate, cost cap: with these, one agent is reliable, and your baseline says what it costs. Add agents only for overflowing context, independent parallel work, independent judgement or wall-clock pressure, and not for tightly coupled work.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 06 · Why split, and what it costs. Week 2 begins: three agents in parallel, measured against your baseline.</div>
+</section>

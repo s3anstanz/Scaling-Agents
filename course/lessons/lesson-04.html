@@ -1,0 +1,295 @@
+<section class="lesson" id="lesson-04" data-week="1" data-title="Verification is the exit condition" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 04</span>
+    <span class="meta">Week 1 · One agent</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="1">1 agent</span>
+  </div>
+  <h1>Verification is the exit condition</h1>
+  <p class="lesson__deck">An agent saying it is finished is a claim. A test passing is evidence. This lesson moves the exit condition out of the prompt and into a Stop hook, so the agent cannot end a session while a ported module is failing.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The agent said it was done</h2>
+  <p>Here is a run that goes wrong in a very ordinary way. The agent is porting <code>kestrel/ops/blur.py</code>, a box blur that averages each pixel with its neighbours. The Python rounds each channel's average with <code>round_half_even</code>. The trace is illustrative, and it is the most common failure you will see in single-agent ports.</p>
+
+  <div class="trace wide">
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">Port blur.py. Read the source and the tests.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: kestrel/ops/blur.py</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: tests/ops/test_blur.py</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Write: ts/src/ops/blur.ts   (channel = Math.round(sum / count))</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Write: ts/test/ops/blur.test.ts</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: npx vitest run test/ops/blur.test.ts -t "radius 0"</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">2 passed</span></div>
+    <div class="trace__row" data-kind="stop"><span class="trace__k">stop</span><span class="trace__v">Ported box_blur and its tests. Tests pass.</span></div>
+  </div>
+
+  <p>Then you run the real check.</p>
+
+  <div class="trace wide">
+    <div class="trace__row" data-kind="tool"><span class="trace__k">you</span><span class="trace__v">scripts/verify.sh kestrel/ops/blur.py</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">exit 1 · averages halves to even: expected [2, 2, 2], received [3, 3, 3]</span></div>
+  </div>
+
+  <p>Two things went wrong, and they compound. The agent used <code>Math.round</code>, which rounds 2.5 up to 3, where Kestrel must produce 2. That is trap T1. Then it ran a narrow slice of the tests, the radius-0 cases where no averaging happens, and reported success. Its report was sincere. From inside its context, the evidence said done.</p>
+  <p>Lesson 02 put the success check into the prompt. That helps, but the agent still decides whether it ran the check, which check, and whether the result counts. A prompt instruction is a request. To make the exit condition reliable, it has to be enforced by something outside the model.</p>
+
+  <h2><span class="h2num">Part two</span>What makes a good check</h2>
+  <p>In a migration the tests are the <b>oracle</b>: the independent source of truth about correct behaviour. The Python tests were written before any agent arrived, they pass on the Python code, and the TypeScript port must pass the same cases. A check worth using as an exit condition has four properties, and <code>scripts/verify.sh</code> has all four.</p>
+  <ul>
+    <li><b>Mechanical.</b> It returns an exit code. No judgement, no reading of prose.</li>
+    <li><b>Complete for its scope.</b> It runs all of a module's tests on both sides, not the slice the agent chose.</li>
+    <li><b>Fast.</b> Seconds per module, so running it on every stop attempt is affordable.</li>
+    <li><b>Independent of the agent's opinion.</b> The agent cannot argue with it.</li>
+  </ul>
+  <p>One weakness remains, and you should know it before you rely on any test-based gate. The agent also ports the tests. If it weakens a TypeScript test, say by changing an expected <code>[2, 2, 2]</code> to <code>[3, 3, 3]</code> to match its output, the TypeScript side passes against a corrupted oracle. <code>verify.sh</code> blocks the crudest version of this: it fails unless the TypeScript test file contains every Python test name, so cases cannot simply disappear. It cannot tell whether an expected value was changed. Read the test diffs of early ports. In Week 2 you will give this job to a reviewer agent that never edits code.</p>
+
+  <h2><span class="h2num">Part three</span>The Stop hook</h2>
+  <p>A <b>hook</b> is a command Claude Code runs at a fixed point in its lifecycle. A <b>Stop hook</b> runs when Claude tries to finish its reply. It gets a small JSON object on stdin, and its exit decides what happens next.</p>
+  <ul>
+    <li><b>Exit 0:</b> Claude is allowed to stop.</li>
+    <li><b>Exit 2:</b> Claude is sent back to work, and whatever the hook wrote to stderr is given to it as the reason. Printing <code>{"decision":"block","reason":"..."}</code> to stdout does the same thing in JSON form.</li>
+  </ul>
+  <p>That turns the loop's success check from an instruction into a gate. When the blur agent above tries to stop, the hook sees that blur's TypeScript tests fail and returns that as the reason. The agent never gets to write its confident report; it gets the test output instead, and the loop continues.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 240" role="img" aria-label="The agent works and tries to stop; the stop gate checks every ported module with status.py; on failure it sends the agent back with the reason, on success the session ends">
+      <g class="g-node g-node--worker" data-node="agent"><rect x="20" y="95" width="130" height="50" rx="8"/><text x="85" y="125">Agent works</text></g>
+      <g class="g-node g-node--worker" data-node="try"><rect x="210" y="95" width="130" height="50" rx="8"/><text x="275" y="125">Tries to stop</text></g>
+      <g class="g-node g-node--check" data-node="gate"><rect x="400" y="95" width="130" height="50" rx="8"/><text x="465" y="125">stop_gate.py</text></g>
+      <g class="g-node g-node--data" data-node="verify"><rect x="400" y="185" width="130" height="40" rx="8"/><text x="465" y="210">status.py</text></g>
+      <g class="g-node g-node--human" data-node="done"><rect x="590" y="95" width="110" height="50" rx="8"/><text x="645" y="125">Done</text></g>
+      <path class="g-edge" d="M150 120 L210 120"/>
+      <path class="g-edge" d="M340 120 L400 120"/>
+      <path class="g-edge g-edge--faint" d="M465 145 L465 185"/>
+      <path class="g-edge" d="M530 120 L590 120"/>
+      <path class="g-edge g-edge--loop" d="M465 95 C 465 30, 85 30, 85 95"/>
+      <text class="g-cap" x="215" y="22">exit 2: stderr becomes the reason</text>
+      <text class="g-cap" x="548" y="110">exit 0</text>
+      <text class="g-cap" x="595" y="210">each ported module</text>
+    </svg>
+    <figcaption>The gate sits between the agent's decision to stop and the end of the session. A failing module turns the stop into another iteration.</figcaption>
+  </figure>
+
+  <p>Any gate that can say no can say no forever, so two safeguards matter.</p>
+  <p><b><code>stop_hook_active</code>.</b> The hook's input includes this field. It is <code>true</code> when Claude is already continuing because a Stop hook blocked it earlier. The usual pattern, and the one you will write, is to exit 0 immediately when it is true. That gives the agent exactly one push-back per attempt to finish: it hears the failure, works on it, and its next stop goes through. It cannot get trapped in a block-continue cycle on a task it cannot finish.</p>
+  <p><b>The continuation cap.</b> Claude Code also caps consecutive stop-hook continuations at 8 (<code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code>). The count resets whenever Claude calls a tool, so the cap is a backstop for a hook that blocks without the agent doing anything in between. Treat it as a seatbelt.</p>
+  <p>The trade-off is real. A gate that ignores <code>stop_hook_active</code> keeps sending the agent back for as long as the tests fail and the agent keeps working, which is stricter and riskier: on an impossible task, only your turn and budget caps end it. The one-push-back gate is the safer default for interactive sessions. You will see stricter, counted versions of this loop in Weeks 2 and 4, where a script tracks rounds and escalates instead of looping.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>The gate blocks the blur agent with the rounding failure. The agent switches to <code>roundHalfEven</code>, but makes a new mistake in the edge handling, and tries to stop again. What does the gate do on this second attempt?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>It lets the agent stop without running anything. The second stop arrives with <code>stop_hook_active</code> set to <code>true</code>, and the gate exits 0 at once. The agent's report will often say it fixed the failure, which is true of the rounding, and say nothing about the edge bug. This is why you still run <code>verify.sh</code> yourself after an interactive session, and why Lesson 05's recipe keeps the success check in the prompt as well as in the hook. The hook guarantees the agent hears about a failure once; the prompt asks it to keep checking.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>The gate, line by line</h2>
+  <p>The gate checks every module that has a TypeScript file, not just the one being worked on, so a blur port that quietly breaks <code>mathutil.ts</code> gets caught too. It asks <code>scripts/status.py --json</code> which modules are ported and whether their TypeScript tests pass. That script derives everything from the repo: the files on disk and a real vitest run. What the agent says it did never enters into it.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>scripts/stop_gate.py</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre><span class="tk-kw">import</span> json</pre></div></li>
+        <li><div class="cl"><span class="ln">2</span><pre><span class="tk-kw">import</span> subprocess</pre></div></li>
+        <li><div class="cl"><span class="ln">3</span><pre><span class="tk-kw">import</span> sys</pre></div></li>
+        <li><div class="cl"><span class="ln">4</span><pre><span class="tk-kw">from</span> pathlib <span class="tk-kw">import</span> Path</pre></div></li>
+        <li><div class="cl"><span class="ln">5</span><pre> </pre></div></li>
+        <li><button class="cl" data-note="n1"><span class="ln">6</span><pre>ROOT = Path(__file__).resolve().parent.parent</pre></button></li>
+        <li><div class="cl"><span class="ln">7</span><pre> </pre></div></li>
+        <li><div class="cl"><span class="ln">8</span><pre> </pre></div></li>
+        <li><div class="cl"><span class="ln">9</span><pre><span class="tk-kw">def</span> main():</pre></div></li>
+        <li><button class="cl" data-note="n2"><span class="ln">10</span><pre>    event = json.load(sys.stdin)</pre></button></li>
+        <li><button class="cl" data-note="n3"><span class="ln">11</span><pre>    <span class="tk-kw">if</span> event.get(<span class="tk-str">"stop_hook_active"</span>):</pre></button></li>
+        <li><div class="cl"><span class="ln">12</span><pre>        sys.exit(<span class="tk-num">0</span>)</pre></div></li>
+        <li><button class="cl" data-note="n4"><span class="ln">13</span><pre>    status = subprocess.run([sys.executable, <span class="tk-str">"scripts/status.py"</span>, <span class="tk-str">"--json"</span>],</pre></button></li>
+        <li><div class="cl"><span class="ln">14</span><pre>                            cwd=ROOT, capture_output=<span class="tk-kw">True</span>, text=<span class="tk-kw">True</span>)</pre></div></li>
+        <li><button class="cl" data-note="n5"><span class="ln">15</span><pre>    <span class="tk-kw">if</span> status.returncode != <span class="tk-num">0</span>:</pre></button></li>
+        <li><div class="cl"><span class="ln">16</span><pre>        print(<span class="tk-str">"Stop gate: scripts/status.py failed.\n"</span> + status.stderr[-<span class="tk-num">800</span>:], file=sys.stderr)</pre></div></li>
+        <li><div class="cl"><span class="ln">17</span><pre>        sys.exit(<span class="tk-num">2</span>)</pre></div></li>
+        <li><div class="cl"><span class="ln">18</span><pre>    failures = []</pre></div></li>
+        <li><div class="cl"><span class="ln">19</span><pre>    <span class="tk-kw">for</span> row <span class="tk-kw">in</span> json.loads(status.stdout):</pre></div></li>
+        <li><button class="cl" data-note="n6"><span class="ln">20</span><pre>        <span class="tk-kw">if</span> <span class="tk-kw">not</span> row[<span class="tk-str">"ported"</span>]:</pre></button></li>
+        <li><div class="cl"><span class="ln">21</span><pre>            <span class="tk-kw">continue</span></pre></div></li>
+        <li><div class="cl"><span class="ln">22</span><pre>        <span class="tk-kw">if</span> <span class="tk-kw">not</span> row[<span class="tk-str">"ts_test_present"</span>]:</pre></div></li>
+        <li><div class="cl"><span class="ln">23</span><pre>            problem = <span class="tk-str">"ported, but its TS test file is missing"</span></pre></div></li>
+        <li><button class="cl" data-note="n7"><span class="ln">24</span><pre>        <span class="tk-kw">elif</span> row[<span class="tk-str">"ts_tests_pass"</span>] <span class="tk-kw">is</span> <span class="tk-kw">not</span> <span class="tk-kw">True</span>:</pre></button></li>
+        <li><div class="cl"><span class="ln">25</span><pre>            problem = <span class="tk-str">f"TS tests not passing ({row['ts_tests_pass']})"</span></pre></div></li>
+        <li><div class="cl"><span class="ln">26</span><pre>        <span class="tk-kw">else</span>:</pre></div></li>
+        <li><div class="cl"><span class="ln">27</span><pre>            <span class="tk-kw">continue</span></pre></div></li>
+        <li><button class="cl" data-note="n8"><span class="ln">28</span><pre>        failures.append(<span class="tk-str">f"{row['module']}: {problem}. Check with scripts/verify.sh {row['py']}"</span>)</pre></button></li>
+        <li><div class="cl"><span class="ln">29</span><pre>    <span class="tk-kw">if</span> failures:</pre></div></li>
+        <li><button class="cl" data-note="n9"><span class="ln">30</span><pre>        print(<span class="tk-str">"Not done. Fix these ported modules before finishing:"</span>, file=sys.stderr)</pre></button></li>
+        <li><div class="cl"><span class="ln">31</span><pre>        print(<span class="tk-str">"\n"</span>.join(failures), file=sys.stderr)</pre></div></li>
+        <li><button class="cl" data-note="n10"><span class="ln">32</span><pre>        sys.exit(<span class="tk-num">2</span>)</pre></button></li>
+        <li><div class="cl"><span class="ln">33</span><pre>    sys.exit(<span class="tk-num">0</span>)</pre></div></li>
+        <li><div class="cl"><span class="ln">34</span><pre> </pre></div></li>
+        <li><div class="cl"><span class="ln">35</span><pre> </pre></div></li>
+        <li><div class="cl"><span class="ln">36</span><pre><span class="tk-kw">if</span> __name__ == <span class="tk-str">"__main__"</span>:</pre></div></li>
+        <li><div class="cl"><span class="ln">37</span><pre>    main()</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line.</p></div>
+        <div class="cnote" data-note="n1"><div class="label">Line 6 · find the repo root</div><p>Paths are resolved from the script's own location, so the gate works whatever directory the hook happens to run in.</p></div>
+        <div class="cnote" data-note="n2"><div class="label">Line 10 · the hook's input</div><p>Claude Code sends a JSON object on stdin. This gate needs one field from it.</p></div>
+        <div class="cnote" data-note="n3"><div class="label">Lines 11–12 · one push-back per stop</div><p>If Claude is already continuing because of a Stop hook, let it stop. This is what prevents an endless block-continue cycle on a task the agent cannot finish.</p></div>
+        <div class="cnote" data-note="n4"><div class="label">Line 13 · status derived from the repo</div><p><code>status.py --json</code> returns one object per module, built from the files on disk, and runs vitest once over every TypeScript test file present. The agent's report never decides what gets checked, and earlier modules are re-tested on every stop.</p></div>
+        <div class="cnote" data-note="n5"><div class="label">Lines 15–17 · a blind gate blocks</div><p>If the status script itself fails, the gate cannot see, so it says no and passes on the error. Because of line 11, that still costs at most one push-back.</p></div>
+        <div class="cnote" data-note="n6"><div class="label">Line 20 · judge only ported modules</div><p>A module counts as ported when its <code>ts/src</code> file exists. Unported modules are future work, not failures.</p></div>
+        <div class="cnote" data-note="n7"><div class="label">Line 24 · only a clear pass is a pass</div><p><code>ts_tests_pass</code> can be <code>true</code>, <code>false</code>, <code>"unknown"</code> (vitest could not report) or <code>null</code>. Anything other than an unambiguous <code>true</code> blocks.</p></div>
+        <div class="cnote" data-note="n8"><div class="label">Line 28 · a short, actionable reason</div><p>Whatever the gate prints lands in the agent's context, so it names the module and the exact command to run, and nothing else. A full test log would spend the window on noise, which is Lesson 03's point. <code>verify.sh</code> gives the agent the failing assertion when it needs it.</p></div>
+        <div class="cnote" data-note="n9"><div class="label">Lines 30–31 · stderr is the message</div><p>With exit code 2, stderr is what Claude reads as the reason it was sent back. Write it as an instruction to the agent.</p></div>
+        <div class="cnote" data-note="n10"><div class="label">Line 32 · exit 2 blocks the stop</div><p>Exit 2 sends Claude back to work. Exit 0 on the next line lets it finish.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <p>The hook is registered in settings. Use <code>.claude/settings.local.json</code>, your personal settings file for this project, so the gate is yours and the shared <code>.claude/settings.json</code> stays untouched. The starter's <code>.gitignore</code> already excludes it, so your checkpoints will not commit it.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>.claude/settings.local.json</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre>{</pre></div></li>
+        <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">"hooks"</span>: {</pre></div></li>
+        <li><button class="cl" data-note="s1"><span class="ln">3</span><pre>    <span class="tk-key">"Stop"</span>: [</pre></button></li>
+        <li><button class="cl" data-note="s2"><span class="ln">4</span><pre>      { <span class="tk-key">"hooks"</span>: [ { <span class="tk-key">"type"</span>: <span class="tk-str">"command"</span>, <span class="tk-key">"command"</span>: <span class="tk-str">"python scripts/stop_gate.py"</span> } ] }</pre></button></li>
+        <li><div class="cl"><span class="ln">5</span><pre>    ]</pre></div></li>
+        <li><div class="cl"><span class="ln">6</span><pre>  }</pre></div></li>
+        <li><div class="cl"><span class="ln">7</span><pre>}</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line.</p></div>
+        <div class="cnote" data-note="s1"><div class="label">Line 3 · the event</div><p><code>Stop</code> fires when the main agent tries to finish. A sibling event, <code>SubagentStop</code>, does the same for subagents and tells the hook which kind of agent is stopping. You will use it in Week 2.</p></div>
+        <div class="cnote" data-note="s2"><div class="label">Line 4 · the command</div><p>The path is relative, so start Claude Code from the project root, in a shell where <code>.venv</code> is active. Then <code>python</code> and the tools the status script calls resolve correctly.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>A teammate copies your gate but deletes the <code>stop_hook_active</code> check, reasoning that a stricter gate is a better gate. What is the most likely bad outcome?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Claude Code rejects the hook as invalid.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">On a module the agent cannot fix, the session keeps cycling between fix attempts and blocked stops until a turn or budget limit, or your patience, ends it.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The gate stops working after 8 blocks, so failing modules get through silently.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Nothing bad. Stricter is strictly better.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The hook is still valid. The settings shape and the exit-code contract are unchanged; only the decision logic is different.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>Each block sends the agent back, it calls tools trying to fix things, and the tool calls reset the continuation counter. On something it truly cannot fix, such as a module whose dependency is not ported, it keeps going. That is a never-stopping loop from Lesson 02, built on purpose. Strict gates need a round counter and an escalation path, which Week 2 adds.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>The cap of 8 counts consecutive continuations and resets when Claude calls a tool. An agent actively trying fixes will keep resetting it, so the cap rarely ends this kind of loop.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Strictness without a way out turns every hard failure into a long, expensive session. The useful kind of strict is a gate plus a limit plus a report of why it stopped.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-04">
+    <div class="lab__head">
+      <span class="label">Lab 04 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $0.30–$1.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Write the stop gate, prove it blocks on a failing module, then port <code>geometry.py</code> with the gate switched on.</p>
+      <ol class="lab__steps">
+        <li><p>From the repo root, activate the environment and confirm the tree is clean.</p>
+          <div class="cmd"><pre><code>source .venv/bin/activate
+git status --short</code></pre></div>
+        </li>
+        <li><p>Create the gate.</p>
+          <div class="cmd" data-file="scripts/stop_gate.py"><pre><code>import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    event = json.load(sys.stdin)
+    if event.get("stop_hook_active"):
+        sys.exit(0)
+    status = subprocess.run([sys.executable, "scripts/status.py", "--json"],
+                            cwd=ROOT, capture_output=True, text=True)
+    if status.returncode != 0:
+        print("Stop gate: scripts/status.py failed.\n" + status.stderr[-800:], file=sys.stderr)
+        sys.exit(2)
+    failures = []
+    for row in json.loads(status.stdout):
+        if not row["ported"]:
+            continue
+        if not row["ts_test_present"]:
+            problem = "ported, but its TS test file is missing"
+        elif row["ts_tests_pass"] is not True:
+            problem = f"TS tests not passing ({row['ts_tests_pass']})"
+        else:
+            continue
+        failures.append(f"{row['module']}: {problem}. Check with scripts/verify.sh {row['py']}")
+    if failures:
+        print("Not done. Fix these ported modules before finishing:", file=sys.stderr)
+        print("\n".join(failures), file=sys.stderr)
+        sys.exit(2)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()</code></pre></div>
+        </li>
+        <li><p>Test it by hand, before any agent depends on it. Both lines should print <code>exit=0</code>: <code>errors</code>, <code>mathutil</code> and <code>color</code> all pass.</p>
+          <div class="cmd"><pre><code>echo '{"stop_hook_active": false}' | python scripts/stop_gate.py; echo "exit=$?"
+echo '{"stop_hook_active": true}' | python scripts/stop_gate.py; echo "exit=$?"</code></pre></div>
+        </li>
+        <li><p>Break a module on purpose by appending a test that can never pass, and run the gate again. It should print a line for <code>core/color</code> and <code>exit=2</code>.</p>
+          <div class="cmd"><pre><code>printf '\nimport { test as gateCheck, expect as gateExpect } from "vitest";\ngateCheck("gate check", () =&gt; gateExpect(1).toBe(2));\n' &gt;&gt; ts/test/core/color.test.ts
+echo '{"stop_hook_active": false}' | python scripts/stop_gate.py; echo "exit=$?"</code></pre></div>
+        </li>
+        <li><p>Register the hook. If <code>.claude/settings.local.json</code> already exists, add the <code>hooks</code> key to it instead of replacing the file.</p>
+          <div class="cmd" data-file=".claude/settings.local.json"><pre><code>{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "python scripts/stop_gate.py" } ] }
+    ]
+  }
+}</code></pre></div>
+        </li>
+        <li><p>Start a new session from this shell, so it picks up the new settings and the active environment.</p>
+          <div class="cmd"><pre><code>claude --model sonnet</code></pre></div>
+        </li>
+        <li><p>Ask for something trivial and watch what happens when it tries to stop.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Reply with the single word ready.</code></pre></div>
+        </li>
+        <li><p>The gate blocks, and Claude gets the failing test as its reason to continue. Let it investigate. If it asks what to do, tell it this.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>The "gate check" test at the end of ts/test/core/color.test.ts was added on purpose to test the stop hook. Remove it and its import line, run scripts/verify.sh kestrel/core/color.py, then stop.</code></pre></div>
+        </li>
+        <li><p>Exit with <code>/exit</code>. Confirm the test file is back to its committed state; if anything remains, restore it.</p>
+          <div class="cmd"><pre><code>git diff --stat ts/
+git checkout -- ts/test/core/color.test.ts</code></pre></div>
+        </li>
+        <li><p>Now port <code>geometry</code> in a fresh, timed session. The prompt removes the agent's own check on purpose, so the gate is the only thing standing between a wrong port and a finished session.</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude --model sonnet
+echo "geometry $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Port kestrel/core/geometry.py to ts/src/core/geometry.ts and its tests from tests/core/test_geometry.py to ts/test/core/geometry.test.ts, following MIGRATION.md including its Known traps, and add the module's export line to ts/src/index.ts. Do not run any tests or scripts yourself: write the files, then stop.</code></pre></div>
+        </li>
+        <li><p>Before exiting that session, note its cost. Write the dollar figure down; Lesson 05 puts it in the baseline.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+        <li><p>After <code>/exit</code>, check the work yourself and checkpoint.</p>
+          <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/geometry.py; echo "exit=$?"
+git add -A &amp;&amp; git commit -qm "lab 04: stop gate, port geometry"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>In step 7, Claude replies <i>ready</i>, then the session shows your gate's stderr: <code>core/color</code> is not passing, with the <code>verify.sh</code> command to run. Claude runs it, finds the failing <i>gate check</i> test, and, with or without your nudge, removes it. For <code>geometry</code>, one of two things happens. If the port was right first time (likely, since Known traps now warns about <code>floor_div</code>), the gate passes silently and the session ends. If not, you see the gate send it back naming <code>core/geometry</code>, and the agent runs <code>verify.sh</code> and fixes it, even though you told it not to run tests. Either way, step 12 should print <code>exit=0</code>.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Make the gate say more: for each failing module, run <code>scripts/verify.sh</code> on it and append the last five lines of its output to the message, so the agent sees the failing assertion without another tool call. Test it by hand as in step 4, restore the test file, and think about the trade: fewer turns, but more text in the context on every block.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Done should be a command that passes, checked by something other than the agent. A Stop hook makes that mechanical; <code>stop_hook_active</code> and the continuation cap keep the gate from becoming a trap.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 05 · One module end to end, and when one agent is enough. The full single-agent recipe, a baseline to measure teams against, and the signs it is time for more agents.</div>
+</section>

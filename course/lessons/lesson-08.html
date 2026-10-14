@@ -1,0 +1,274 @@
+<section class="lesson" id="lesson-08" data-week="2" data-title="Defining subagent roles" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 08</span>
+    <span class="meta">Week 2 · Small teams</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="3-5">3–5 agents</span>
+  </div>
+  <h1>Defining subagent roles</h1>
+  <p class="lesson__deck">So far every worker was an anonymous helper described in a prompt. Here you write three named roles as files (planner, porter and reviewer), each with its own instructions, tools and model, and use them to port <code>io/</code>.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>From a long prompt to a role file</h2>
+  <p>Look back at your prompts from Labs 06 and 07. Half of each one repeated the same rules: follow <code>MIGRATION.md</code>, run <code>scripts/verify.sh</code> until it exits 0, reply in five lines with MODULE, VERIFY, RUNS, TRAPS and FILES. Those rules describe a role. Every porter needs them, whatever module it gets.</p>
+  <p>Claude Code lets you write a role down once as a <b>subagent file</b>. Project roles live in <code>.claude/agents/*.md</code>, which the starter left empty for this lesson. Personal roles you want in every project go in <code>~/.claude/agents/</code>. For a one-off session you can also pass definitions as JSON with <code>--agents</code>.</p>
+  <p>A subagent file has two parts. The <b>frontmatter</b>, between the two <code>---</code> lines, holds settings in YAML. The <b>body</b> below it becomes the subagent's system prompt. When the lead delegates, the subagent starts with that system prompt, the delegation message and your <code>CLAUDE.md</code>. It still does not see the lead's conversation, so the body has to carry everything the role always needs, and the delegation message carries only what changes per task: usually just the module path.</p>
+  <p>Writing roles as files buys four things. The rules stop drifting between prompts. They live in git, so you can review a change to the porter like any code change. Tool limits become enforced settings instead of polite requests. And the model for each role is fixed where the role is defined.</p>
+
+  <h2><span class="h2num">Part two</span>The fields that matter</h2>
+  <p>Two fields are required. <code>name</code> is how you and the lead refer to the role. <code>description</code> is how the lead decides when to use it. The lead reads every description and delegates when a task matches, so a description is closer to a routing rule than to documentation. Say what the role does, when to use it and what it returns. The phrase "use proactively" encourages the lead to delegate without being asked.</p>
+  <p>Four optional fields do most of the work on Kestrel:</p>
+  <ul>
+    <li><code>tools</code> is an allowlist. The role gets these tools and no others. Leave it out and the role gets the full toolset.</li>
+    <li><code>model</code> sets the role's model (precedence level 2 from Lesson 07). Use <code>inherit</code> to follow the main model.</li>
+    <li><code>effort</code> sets thinking effort for the role.</li>
+    <li><code>maxTurns</code> caps the role's loop. It is the turn-cap stop condition from Lesson 02, now built into the role.</li>
+  </ul>
+  <p>Other fields exist for later lessons: <code>disallowedTools</code>, <code>permissionMode</code>, <code>skills</code>, <code>mcpServers</code>, <code>hooks</code>, <code>memory</code>, <code>background</code>, <code>color</code>, <code>initialPrompt</code>, and <code>isolation: worktree</code>, which you will use in Lesson 14 to keep parallel porters out of each other's files.</p>
+  <p>You can call a role three ways. Mention it with <code>@agent-porter</code>. Ask in plain words, as in "use the porter agent to port <code>ops/contrast.py</code>". Or run a whole session as that role with <code>claude --agent porter</code>.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>.claude/agents/porter.md</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><button class="cl" data-note="n1"><span class="ln">1</span><pre>---</pre></button></li>
+        <li><div class="cl"><span class="ln">2</span><pre><span class="tk-key">name</span>: porter</pre></div></li>
+        <li><button class="cl" data-note="n2"><span class="ln">3</span><pre><span class="tk-key">description</span>: Ports exactly one Kestrel Python module and its tests to TypeScript, then loops on scripts/verify.sh until it passes. Use proactively for any "port kestrel/&lt;path&gt;.py" task, one module per call.</pre></button></li>
+        <li><button class="cl" data-note="n3"><span class="ln">4</span><pre><span class="tk-key">tools</span>: Read, Grep, Glob, Edit, Write, Bash</pre></button></li>
+        <li><button class="cl" data-note="n4"><span class="ln">5</span><pre><span class="tk-key">model</span>: sonnet</pre></button></li>
+        <li><div class="cl"><span class="ln">6</span><pre><span class="tk-key">effort</span>: medium</pre></div></li>
+        <li><button class="cl" data-note="n5"><span class="ln">7</span><pre><span class="tk-key">maxTurns</span>: <span class="tk-num">30</span></pre></button></li>
+        <li><div class="cl"><span class="ln">8</span><pre>---</pre></div></li>
+        <li><div class="cl"><span class="ln">9</span><pre>You port one Kestrel module from Python to TypeScript. The delegation message names it, for example kestrel/ops/pad.py.</pre></div></li>
+        <li><div class="cl"><span class="ln">10</span><pre></pre></div></li>
+        <li><div class="cl"><span class="ln">11</span><pre>Before you write code:</pre></div></li>
+        <li><div class="cl"><span class="ln">12</span><pre>1. Read MIGRATION.md in full, including Known traps.</pre></div></li>
+        <li><div class="cl"><span class="ln">13</span><pre>2. Read kestrel/&lt;path&gt;.py and its tests in tests/&lt;dir&gt;/test_&lt;name&gt;.py.</pre></div></li>
+        <li><button class="cl" data-note="n6"><span class="ln">14</span><pre>3. Read the ported TypeScript of every module it imports, under ts/src/. Import from those files. Do not re-implement helpers that already exist there.</pre></button></li>
+        <li><div class="cl"><span class="ln">15</span><pre></pre></div></li>
+        <li><div class="cl"><span class="ln">16</span><pre>Write:</pre></div></li>
+        <li><div class="cl"><span class="ln">17</span><pre>- ts/src/&lt;path&gt;.ts and ts/test/&lt;path&gt;.test.ts.</pre></div></li>
+        <li><button class="cl" data-note="n7"><span class="ln">18</span><pre>- Every Python test, with the same inputs and expected values. Never change an expected value to make a test pass.</pre></button></li>
+        <li><button class="cl" data-note="n8"><span class="ln">19</span><pre>- One line in ts/src/index.ts: export * from "./&lt;path&gt;"; unless it is already there.</pre></button></li>
+        <li><div class="cl"><span class="ln">20</span><pre></pre></div></li>
+        <li><div class="cl"><span class="ln">21</span><pre>Loop:</pre></div></li>
+        <li><div class="cl"><span class="ln">22</span><pre>- Run scripts/verify.sh kestrel/&lt;path&gt;.py. Read the failure, fix the code, run it again.</pre></div></li>
+        <li><div class="cl"><span class="ln">23</span><pre>- Stop when it exits 0.</pre></div></li>
+        <li><button class="cl" data-note="n9"><span class="ln">24</span><pre>- If the same failure appears on three runs in a row, stop and report it.</pre></button></li>
+        <li><div class="cl"><span class="ln">25</span><pre></pre></div></li>
+        <li><button class="cl" data-note="n10"><span class="ln">26</span><pre>Touch nothing else. Do not edit MIGRATION.md or other modules; report traps instead.</pre></button></li>
+        <li><div class="cl"><span class="ln">27</span><pre></pre></div></li>
+        <li><button class="cl" data-note="n11"><span class="ln">28</span><pre>Final report, at most 8 lines:</pre></button></li>
+        <li><div class="cl"><span class="ln">29</span><pre>MODULE: kestrel/&lt;path&gt;.py</pre></div></li>
+        <li><div class="cl"><span class="ln">30</span><pre>VERIFY: pass or fail (last exit code)</pre></div></li>
+        <li><div class="cl"><span class="ln">31</span><pre>RUNS: number of verify.sh runs</pre></div></li>
+        <li><div class="cl"><span class="ln">32</span><pre>TRAPS: each trap hit, as "T&lt;n&gt;: one line" or "new: one line"</pre></div></li>
+        <li><div class="cl"><span class="ln">33</span><pre>FILES: files written or edited</pre></div></li>
+        <li><div class="cl"><span class="ln">34</span><pre>NOTES: anything the lead must decide</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line. Every rule here used to be pasted into a prompt.</p></div>
+        <div class="cnote" data-note="n1"><div class="label">Line 1 · frontmatter</div><p>Settings sit between the two <code>---</code> lines. Everything after line 8 is the system prompt.</p></div>
+        <div class="cnote" data-note="n2"><div class="label">Line 3 · description</div><p>The lead routes on this text. It names the trigger ("port kestrel/...py"), the scope (one module per call) and the exit condition. "Use proactively" makes delegation the default for matching tasks.</p></div>
+        <div class="cnote" data-note="n3"><div class="label">Line 4 · tools</div><p>An allowlist. The porter must write files and run <code>verify.sh</code>, so it gets Edit, Write and Bash. It gets nothing else, such as the Agent tool, so it cannot spawn helpers of its own.</p></div>
+        <div class="cnote" data-note="n4"><div class="label">Line 5 · model</div><p>Set this from your Lab 07 data. Frontmatter outranks <code>CLAUDE_CODE_SUBAGENT_MODEL</code>, so once this line exists the environment variable no longer applies to porters. A per-call <code>model</code> still overrides it.</p></div>
+        <div class="cnote" data-note="n5"><div class="label">Line 7 · maxTurns</div><p>A hard turn cap per delegation. Thirty turns is generous for one Kestrel module; a porter that needs more is stuck, and you want it back with a report.</p></div>
+        <div class="cnote" data-note="n6"><div class="label">Line 14 · reuse</div><p>Without this, porters copy a private <code>floorDiv</code> into every file that needs one. Each copy is another place for trap T2 to come back.</p></div>
+        <div class="cnote" data-note="n7"><div class="label">Line 18 · protect the oracle</div><p>A cheap model under pressure sometimes "fixes" a T1 failure by editing the expected value. This line forbids it, and the reviewer checks it.</p></div>
+        <div class="cnote" data-note="n8"><div class="label">Line 19 · the barrel</div><p>The starter's convention: every ported module adds one export line. It is also the shared-file hotspot that Lesson 14 redesigns.</p></div>
+        <div class="cnote" data-note="n9"><div class="label">Line 24 · no-progress stop</div><p>The fourth stop condition from Lesson 02. The same failure three times means the porter lacks information, so more attempts only burn tokens.</p></div>
+        <div class="cnote" data-note="n10"><div class="label">Line 26 · single writer</div><p><code>MIGRATION.md</code> is shared by every agent. Porters report traps; only the lead appends them. Lesson 12 explains this rule in depth.</p></div>
+        <div class="cnote" data-note="n11"><div class="label">Line 28 · the report</div><p>The only thing that crosses back to the lead. A fixed shape makes reports comparable and keeps traps from being lost in a lossy handoff.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Least privilege, role by role</h2>
+  <p><b>Least privilege</b> means each role gets the smallest set of tools that lets it do its job. On a team it does two things. It limits the damage a confused agent can do, and it keeps each role honest about what it is for.</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Role</th><th>Tools</th><th>Edits files?</th><th>Model</th><th>Returns</th></tr></thead>
+    <tbody>
+      <tr><td>planner</td><td>Read, Grep, Glob, Bash</td><td>Never</td><td><code>inherit</code>, high effort</td><td>A plan in a fixed shape</td></tr>
+      <tr><td>porter</td><td>Read, Grep, Glob, Edit, Write, Bash</td><td>Its own module, its test, one barrel line</td><td><code>sonnet</code> or <code>haiku</code></td><td>The 6-line report</td></tr>
+      <tr><td>reviewer</td><td>Read, Grep, Glob, Bash</td><td>Never</td><td><code>opus</code>, high effort</td><td><code>VERDICT: PASS</code> or <code>FAIL</code> with findings</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">Two read-only roles and one writer. The planner and reviewer keep Bash so they can run scripts and tests.</p>
+  <p>The reviewer never edits, and this is the rule people most want to break. If the reviewer could fix "small things", two problems follow. First, nobody reviews the fix. Second, the reviewer starts adjusting tests until they pass, which is the exact failure it exists to catch. A reviewer that only reads, runs tests and reports stays independent.</p>
+  <p>Bash needs one more sentence. It is a single tool, so a role either has it or not. What a planner or reviewer actually runs through Bash is shaped by its prompt ("only run these scripts") and limited by your permission settings. The starter's <code>.claude/settings.json</code> allows <code>python -m pytest</code>, <code>npx vitest</code>, <code>scripts/*</code> and <code>python scripts/*</code> without asking. Anything else prompts you, which is what you want from a read-only role.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 280" role="img" aria-label="The planner hands a plan to two porters for io/ppm and io/pgm; both report to the reviewer; the reviewer sends findings back to a porter on FAIL and its verdict forward to the lead">
+      <text class="g-cap" x="80" y="98" text-anchor="middle">read + scripts</text>
+      <text class="g-cap" x="270" y="28" text-anchor="middle">+ Edit, Write</text>
+      <text class="g-cap" x="460" y="98" text-anchor="middle">read + run tests</text>
+      <text class="g-cap" x="640" y="98" text-anchor="middle">decides</text>
+      <g class="g-node g-node--worker"><rect x="20" y="110" width="120" height="50" rx="8"/><text x="80" y="140">Planner</text></g>
+      <g class="g-node g-node--worker"><rect x="210" y="40" width="120" height="50" rx="8"/><text x="270" y="70">Porter: ppm</text></g>
+      <g class="g-node g-node--worker"><rect x="210" y="180" width="120" height="50" rx="8"/><text x="270" y="210">Porter: pgm</text></g>
+      <g class="g-node g-node--check"><rect x="400" y="110" width="120" height="50" rx="8"/><text x="460" y="140">Reviewer</text></g>
+      <g class="g-node g-node--orch"><rect x="580" y="110" width="120" height="50" rx="8"/><text x="640" y="140">Lead session</text></g>
+      <path class="g-edge" d="M140 135 C 175 135, 175 65, 210 65"/>
+      <path class="g-edge" d="M140 135 C 175 135, 175 205, 210 205"/>
+      <path class="g-edge" d="M330 65 C 365 65, 365 135, 400 135"/>
+      <path class="g-edge" d="M330 205 C 365 205, 365 135, 400 135"/>
+      <path class="g-edge" d="M520 135 L580 135"/>
+      <path class="g-edge g-edge--loop" d="M460 160 C 460 262, 290 262, 290 232"/>
+      <text class="g-cap" x="460" y="274" text-anchor="middle">FAIL: findings</text>
+    </svg>
+    <figcaption>The lab's flow. The lead (your session) makes every handoff; the diagram shows who produces what for whom.</figcaption>
+  </figure>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Suppose you write the porter's description as "Helps with TypeScript code." Then you type "port kestrel/io/pgm.py" without naming an agent. What does the lead do?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Probably it ports the module itself, in its own context, with none of the porter's rules, tools or model. It might delegate, but nothing in "Helps with TypeScript code" tells it this task is the porter's job. The lead routes on descriptions. A description that names the trigger ("port kestrel/...py"), the scope and the result makes delegation reliable; a vague one makes it a coin toss. When it matters, name the agent explicitly.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Which <code>tools</code> line fits the reviewer best?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t"><code>tools: Read, Grep, Glob</code></span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t"><code>tools: Read, Grep, Glob, Bash</code></span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t"><code>tools: Read, Grep, Glob, Edit, Bash</code>, so it can fix trivial issues</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">No <code>tools</code> line, and a body that says "never edit files"</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Too tight</div><p>Without Bash the reviewer cannot run <code>scripts/verify.sh</code>. It would have to trust the porter's "VERIFY: pass", which removes the independence you wanted.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>It can read everything and run the tests itself, and it cannot change a file through the edit tools. The prompt and your permission settings shape what it runs through Bash.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Once the reviewer can edit, its fixes go unreviewed, and "trivial" tends to grow to include test expectations. Findings go back to the porter instead.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Leaving out <code>tools</code> gives the role the full toolset, Edit and Write included. A sentence in the prompt is a request; the allowlist is a limit.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-08">
+    <div class="lab__head">
+      <span class="label">Lab 08 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $1.00–$3.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Write the planner, porter and reviewer roles, then use them to port <code>io/ppm</code> and <code>io/pgm</code> with a review step.</p>
+      <ol class="lab__steps">
+        <li><p>Create the planner.</p>
+          <div class="cmd" data-file=".claude/agents/planner.md"><pre><code>---
+name: planner
+description: Read-only planner for the Kestrel port. Use before porting a group of modules, to split work into independent packages, or to propose a porting strategy. Never edits files. Returns a plan in a fixed shape.
+tools: Read, Grep, Glob, Bash
+model: inherit
+effort: high
+maxTurns: 15
+---
+You plan work for the Kestrel Python-to-TypeScript port. You never write or edit files. Your reply is the plan.
+
+Ground every plan in the repo. Run only these commands, and otherwise just read files:
+- python scripts/status.py
+- python scripts/status.py --next
+- python scripts/deps.py --layers
+
+Read MIGRATION.md, including Known traps. Scan the Python modules in scope for the patterns the traps describe: round(, //, %, sorted( or .sort(, and header parsing.
+
+If the delegation message gives you a lens or strategy, plan through that lens and say what it costs.
+
+Reply in this shape, at most 25 lines:
+SCOPE: modules in scope; any that are not ready yet, and why
+PACKAGES: numbered; each is a set of modules one porter can do alone, with all its dependencies already ported
+TRAPS: per package, the known traps that apply and anything that looks like a new one
+ORDER: what must run first and what can run in parallel
+VERIFY: the exact scripts/verify.sh commands
+RISKS: at most 3</code></pre></div>
+        </li>
+        <li><p>Create the porter. It is the file you just studied.</p>
+          <div class="cmd" data-file=".claude/agents/porter.md"><pre><code>---
+name: porter
+description: Ports exactly one Kestrel Python module and its tests to TypeScript, then loops on scripts/verify.sh until it passes. Use proactively for any "port kestrel/&lt;path&gt;.py" task, one module per call.
+tools: Read, Grep, Glob, Edit, Write, Bash
+model: sonnet
+effort: medium
+maxTurns: 30
+---
+You port one Kestrel module from Python to TypeScript. The delegation message names it, for example kestrel/ops/pad.py.
+
+Before you write code:
+1. Read MIGRATION.md in full, including Known traps.
+2. Read kestrel/&lt;path&gt;.py and its tests in tests/&lt;dir&gt;/test_&lt;name&gt;.py.
+3. Read the ported TypeScript of every module it imports, under ts/src/. Import from those files. Do not re-implement helpers that already exist there.
+
+Write:
+- ts/src/&lt;path&gt;.ts and ts/test/&lt;path&gt;.test.ts.
+- Every Python test, with the same inputs and expected values. Never change an expected value to make a test pass.
+- One line in ts/src/index.ts: export * from "./&lt;path&gt;"; unless it is already there.
+
+Loop:
+- Run scripts/verify.sh kestrel/&lt;path&gt;.py. Read the failure, fix the code, run it again.
+- Stop when it exits 0.
+- If the same failure appears on three runs in a row, stop and report it.
+
+Touch nothing else. Do not edit MIGRATION.md or other modules; report traps instead.
+
+Final report, at most 8 lines:
+MODULE: kestrel/&lt;path&gt;.py
+VERIFY: pass or fail (last exit code)
+RUNS: number of verify.sh runs
+TRAPS: each trap hit, as "T&lt;n&gt;: one line" or "new: one line"
+FILES: files written or edited
+NOTES: anything the lead must decide</code></pre></div>
+        </li>
+        <li><p>Create the reviewer. Its rubric (R1 to R5) is what Lesson 10's loop runs against.</p>
+          <div class="cmd" data-file=".claude/agents/reviewer.md"><pre><code>---
+name: reviewer
+description: Independent reviewer for ported Kestrel modules. Use after a porter finishes, giving it the module path or paths. Runs the tests and checks the port against MIGRATION.md. Never edits files. Returns VERDICT PASS or FAIL with findings.
+tools: Read, Grep, Glob, Bash
+model: opus
+effort: high
+maxTurns: 15
+---
+You review ported Kestrel modules. You did not write them and you do not fix them. When something is wrong, say exactly what and where; the porter fixes it.
+
+Run only scripts/verify.sh and python scripts/status.py, and otherwise just read files.
+
+For each module kestrel/&lt;path&gt;.py, check:
+R1 Tests: run scripts/verify.sh kestrel/&lt;path&gt;.py. Pass only on exit 0.
+R2 Coverage: every test function in the Python test file has a matching TS test in ts/test/&lt;path&gt;.test.ts with the same inputs and expected values. Give both counts.
+R3 Traps: for every entry in MIGRATION.md Known traps, check the TS code. Flag Math.round where Python used round(), Math.trunc or plain / where Python used //, a bare % whose left side can be negative, .sort() on numbers without a comparator, and header parsing that ignores # comments or irregular whitespace.
+R4 Contract: names and types follow MIGRATION.md; helpers are imported from already-ported modules, not copied.
+R5 Barrel: ts/src/index.ts has exactly one export line for the module.
+
+Reply in exactly this shape:
+VERDICT: PASS or FAIL
+R1: pass or fail, one line of evidence
+R2: pass or fail, one line of evidence
+R3: pass or fail, one line of evidence
+R4: pass or fail, one line of evidence
+R5: pass or fail, one line of evidence
+FINDINGS: on FAIL only, numbered; each gives file:line, the check that failed, and the fix in one sentence</code></pre></div>
+        </li>
+        <li><p>Start a fresh session so the new files are loaded, and check that the lead sees them.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Which subagents defined in .claude/agents/ can you delegate to? One line each: name, tools, model.</code></pre></div>
+        </li>
+        <li><p>Run the team on <code>io/</code>.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Use the planner agent to plan porting kestrel/io/ (ppm.py and pgm.py).
+Then use the porter agent once per module, in parallel if the plan says they are independent.
+Then use the reviewer agent on both modules.
+If the reviewer returns FAIL for a module, send its FINDINGS verbatim to a new porter call for that module and review again, at most twice.
+Finally, append any new trap the porters or the reviewer reported to the Known traps section of MIGRATION.md (you are the only one who edits that file), and run python scripts/status.py.</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>The planner replies with SCOPE, PACKAGES, TRAPS, ORDER, VERIFY and RISKS, and probably flags header parsing in <code>ppm.py</code>. Two porter calls run in parallel and each returns the 6-line report. <code>io/ppm</code> is where trap T5 lives: PPM headers may contain <code>#</code> comments and irregular whitespace. A naive split on spaces fails the Python-derived tests; if the porter misses part of it, the reviewer's R3 should catch it. You end with <code>io/ppm</code> and <code>io/pgm</code> passing, a T5 entry in <code>MIGRATION.md</code> written by the lead, and three agent files that Week 3 builds on.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Run <code>claude --agent reviewer</code> and ask it to review <code>kestrel/ops/blur.py</code> from Week 1. A whole session in the reviewer role sees your port with fresh eyes. Then ask it to "just fix" a finding and watch the tool allowlist stop it.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>A role file turns repeated prompt text into an enforced contract: a description that routes, a tool allowlist that limits, a model and turn cap that budget, and a report shape that survives the handoff. Give each role the least it needs, and never let the reviewer edit.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 09 · Graph shapes. With three roles in hand, you choose how to wire them: chain, diamond, double diamond, tree or cycle.</div>
+</section>

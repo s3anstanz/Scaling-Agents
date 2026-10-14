@@ -1,0 +1,192 @@
+<section class="lesson" id="lesson-01" data-week="1" data-title="What an agent actually is" data-minutes="14">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 01</span>
+    <span class="meta">Week 1 · One agent</span>
+    <span class="meta">~14 min</span>
+    <span class="scale" data-scale="1">1 agent</span>
+  </div>
+  <h1>What an agent actually is</h1>
+  <p class="lesson__deck">An agent is a model, a set of tools, and a loop that keeps going until something says stop. This lesson pins that idea to a real codebase and sets up the project you will grow from one agent to a hundred.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The course and the codebase</h2>
+  <p>Over four weeks you will take one job and push it from a single agent to a fleet. Week 1 is one agent, done properly. Week 2 is a small team of three to five. Week 3 is a system of ten to twenty-five, where the shape of the work matters more than any single prompt. Week 4 is scale: a hundred agents, driven by scripts that orchestrate them the way a build system drives compilers.</p>
+  <p>The job is a migration. <b>Kestrel</b> is a fictional open-source image-processing library written in Python. In the story it has about 240 modules: colour handling, rectangles and coordinates, a dozen families of image operations, file formats, analysis, a pipeline runner and a command-line tool. Its maintainers want a TypeScript version that behaves identically, down to the output bytes.</p>
+  <p>You will not port 240 modules for real. The practice repo, <code>kestrel-starter</code>, is a 24-module slice of Kestrel with the same structure, the same kinds of dependencies and the same traps. Every lab runs against it for real, at small cost. When the course reaches a hundred agents, you will run ten to twenty cheap workers against the 24 modules and then reason about what changes at 240.</p>
+  <p>A migration is a good teaching case because it has every property that makes agent work interesting. There are many similar units of work. They depend on each other in a known order. There is an oracle, meaning an independent source of truth: the Python tests define correct behaviour, and the TypeScript port must pass the same tests. And there are traps, places where Python and JavaScript quietly disagree, that a confident model will walk straight into.</p>
+  <p>Here is the part of the starter you will touch most this week.</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Path</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>kestrel/core/</code>, <code>kestrel/ops/</code>, …</td><td>The Python source. <code>core/</code> holds <code>errors</code>, <code>mathutil</code>, <code>color</code>, <code>geometry</code> and <code>image</code>; <code>ops/</code> holds twelve image operations such as <code>blur</code> and <code>crop</code>.</td></tr>
+      <tr><td><code>tests/</code></td><td>Python tests, mirroring the source: <code>tests/core/test_color.py</code>, <code>tests/ops/test_blur.py</code>.</td></tr>
+      <tr><td><code>ts/src/</code>, <code>ts/test/</code></td><td>Where ported code and ported tests go, same layout: <code>ts/src/core/color.ts</code>, <code>ts/test/core/color.test.ts</code>.</td></tr>
+      <tr><td><code>CLAUDE.md</code>, <code>MIGRATION.md</code></td><td>The short repo guide Claude Code loads, and the porting rules it points to. <code>MIGRATION.md</code> has an empty Known traps section that you will fill.</td></tr>
+      <tr><td><code>scripts/verify.sh</code></td><td>Runs the Python tests and the TypeScript tests for one module. Exit code 0 only if both pass. This is the definition of done for the whole course.</td></tr>
+      <tr><td><code>scripts/deps.py</code>, <code>scripts/status.py</code></td><td>The dependency graph from imports, and a table of what is ported and passing.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">The paths you will use in Week 1. The full layout is on the Course home page.</p>
+
+  <h2><span class="h2num">Part two</span>Chat, workflow, agent</h2>
+  <p>There are three common ways to put a model to work on Kestrel, and the difference between them is a single question: who decides the next step?</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Mode</th><th>Who picks the next step</th><th>On Kestrel</th><th>Good for</th></tr></thead>
+    <tbody>
+      <tr><td><b>Chat</b></td><td>You</td><td>Paste <code>color.py</code> into a chat, ask for TypeScript, paste the answer into <code>ts/src/core/color.ts</code>, run the tests yourself.</td><td>One answer you will check by hand.</td></tr>
+      <tr><td><b>Workflow</b></td><td>Your code</td><td>A script loops over the 24 files in a fixed order, calls the model once per file and writes whatever comes back.</td><td>Steps you know in advance, repeated many times.</td></tr>
+      <tr><td><b>Agent</b></td><td>The model</td><td>Claude Code reads <code>color.py</code>, writes <code>color.ts</code>, runs <code>scripts/verify.sh</code>, reads the failure, edits, runs it again.</td><td>Tasks where the right next step depends on what just happened.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The chat version breaks the moment the first answer is wrong, because you become the loop. The workflow version is predictable and cheap, and it also writes a broken <code>color.ts</code> with total confidence, because nothing in it looks at the test result. The agent version is the only one that can notice its own mistake, since it chooses to run the tests and then reads what they say.</p>
+  <p>Anthropic's engineering post <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a> draws the same line. It describes agents as models using tools in a loop, and it lists the workflow patterns (chaining, routing, parallelization, orchestrator-workers, evaluator-optimizer) that sit between plain chat and a free-running agent. Its central advice is to start with the simplest thing that works. That advice runs through this whole course. Week 4 brings workflows back, with agents inside each step.</p>
+
+  <h2><span class="h2num">Part three</span>The loop</h2>
+  <p>Strip away the product and an agent is three parts. The <b>model</b> reads everything in front of it and writes the next message. The <b>tools</b> are actions the model can request: read a file, edit a file, run a shell command. The <b>loop</b> is the harness, Claude Code in our case, that runs the requested tool, appends the result to the conversation and calls the model again.</p>
+  <p>Each pass around the loop has the same rhythm. Gather context, act, check the result, decide what to do next. The loop ends when the model writes a reply with no tool request in it, or when something outside the model, such as a turn limit or a budget, cuts it off.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 260" role="img" aria-label="The agent loop: your prompt enters, the agent gathers context, acts with a tool, checks the result, decides, and either loops again or stops with a report">
+      <g class="g-node g-node--human" data-node="prompt"><rect x="20" y="30" width="120" height="50" rx="8"/><text x="80" y="60">Your prompt</text></g>
+      <g class="g-node g-node--worker" data-node="gather"><rect x="220" y="30" width="140" height="50" rx="8"/><text x="290" y="60">Gather context</text></g>
+      <g class="g-node g-node--worker" data-node="act"><rect x="450" y="30" width="140" height="50" rx="8"/><text x="520" y="60">Act: tool call</text></g>
+      <g class="g-node g-node--check" data-node="check"><rect x="450" y="180" width="140" height="50" rx="8"/><text x="520" y="210">Check result</text></g>
+      <g class="g-node g-node--orch" data-node="decide"><rect x="220" y="180" width="140" height="50" rx="8"/><text x="290" y="210">Model decides</text></g>
+      <g class="g-node g-node--data" data-node="report"><rect x="20" y="180" width="120" height="50" rx="8"/><text x="80" y="210">Report</text></g>
+      <path class="g-edge" d="M140 55 L220 55"/>
+      <path class="g-edge" d="M360 55 L450 55"/>
+      <path class="g-edge" d="M520 80 L520 180"/>
+      <path class="g-edge" d="M450 205 L360 205"/>
+      <path class="g-edge g-edge--loop" d="M290 180 L290 80"/>
+      <path class="g-edge" d="M220 205 L140 205"/>
+      <text class="g-cap" x="375" y="134">one iteration</text>
+      <text class="g-cap" x="166" y="196">stop</text>
+    </svg>
+    <figcaption>The loop as a cycle. The dashed edge is the decision to go around again; the edge to Report is the decision to stop.</figcaption>
+  </figure>
+
+  <p>Notice where the check sits. It is inside the loop, before the decision. An agent that acts and then decides without checking is a workflow with extra steps. The whole of Week 1 is about making each of these four boxes deliberate: what the agent sees when it gathers context (Lesson 03), what counts as a passing check (Lesson 04), and what makes the loop stop (Lesson 02).</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>You open Claude Code in <code>kestrel-starter</code> and type: <i>run the Python tests and tell me how many pass</i>. How many times does the model get called before you see the answer?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>At least two. The first call reads your request and replies with a tool request, something like <code>Bash: python -m pytest -q</code>. The model cannot run anything itself. Claude Code runs the command, appends the output to the conversation, and calls the model a second time. Only that second call can see the result and write <i>all tests pass</i>. If the first command fails because, say, the virtual environment is not active, you get a third call, a fourth, and so on. Every tool use costs one more trip around the loop.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Anatomy of a run on Kestrel</h2>
+  <p>Below is a condensed trace of one agent porting the smallest module, <code>kestrel/core/errors.py</code>. That file defines the library's exception classes (<code>KestrelError</code>, <code>FormatError</code>, <code>BoundsError</code>, <code>PipelineError</code>) and a <code>describe</code> function that formats an error as <code>"FormatError: bad header"</code>. The trace is illustrative, but every row is the kind of thing you will see in Lab 02.</p>
+
+  <div class="trace wide">
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">Port errors.py. Read the source, its tests and the porting rules first.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: kestrel/core/errors.py</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: tests/core/test_errors.py</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: MIGRATION.md</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: python -m pytest tests/core/test_errors.py -q</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">all passed (the Python side is the reference)</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Write: ts/src/core/errors.ts</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Write: ts/test/core/errors.test.ts</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: scripts/verify.sh kestrel/core/errors.py</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">exit 1 · describe: expected "FormatError: bad header", received "Error: bad header"</span></div>
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">JS subclasses of Error keep name = "Error" unless the constructor sets it. Set this.name from the class.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Edit: ts/src/core/errors.ts</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: scripts/verify.sh kestrel/core/errors.py</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">exit 0 · Python passed · TypeScript passed</span></div>
+    <div class="trace__row" data-kind="stop"><span class="trace__k">stop</span><span class="trace__v">Ported errors.py and its tests; verify.sh passes. Note: Error subclasses must set name.</span></div>
+  </div>
+
+  <p>Read it as a sequence of loop iterations. Each <b>tool</b> row is the model asking for an action. Each <b>result</b> row is Claude Code feeding the outcome back. The model never touched the disk or the shell directly; it wrote requests, and the harness carried them out under the permissions you configured.</p>
+  <p>Three things in this trace are worth carrying into every later lesson.</p>
+  <ol>
+    <li><b>Context is assembled, step by step.</b> The model started knowing only your prompt and <code>CLAUDE.md</code>. It chose to read three files. By the end, its context held the source, the tests, the rules and two test outputs. What it reads decides what it can get right.</li>
+    <li><b>The check changed the plan.</b> The first <code>verify.sh</code> run failed, and the failure message named the exact problem. Without that run, the agent would have reported success on broken code.</li>
+    <li><b>Stopping was the model's choice.</b> It stopped when the check passed. Nothing forced that. Lesson 02 is about stop conditions you control, and Lesson 04 makes this one mechanical.</li>
+  </ol>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>In the trace, what caused the agent to edit <code>ts/src/core/errors.ts</code> a second time?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Claude Code noticed the non-zero exit code and re-prompted the model automatically.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">The failing <code>verify.sh</code> output was appended to the model's context, and the model chose to fix it.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The prompt told the agent to write the file, then revise it once.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">The model remembered from training that TypeScript errors need a name field, and corrected itself.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The harness does not judge results by default. A failing command is just more text in the context. You can make the harness push back on failures, and Lesson 04 does exactly that with a Stop hook, but here nothing like that was configured.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>The tool result became part of what the model read on its next call. The message named the expected and actual strings, and the model decided the next step from it. That is the whole difference between an agent and a workflow.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Nothing in the prompt scripted a revision. If the first port had passed, the agent would have stopped after one write. The number of edits came from what the tests said.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Training knowledge helped it pick the right fix, but it did not trigger the fix. It wrote the broken version first. It was the test output, read during the loop, that made it go back.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>What you control</h2>
+  <p>When people say an agent is good or bad, they usually mean the model. In practice you control more of the outcome through the other two parts. For one agent, the levers are these.</p>
+  <ul>
+    <li><b>The model and its effort.</b> <code>--model</code>, <code>/model</code> or <code>"model"</code> in settings, with aliases such as <code>opus</code>, <code>sonnet</code> and <code>haiku</code>. Effort runs from low to max via <code>/effort</code> or <code>--effort</code>.</li>
+    <li><b>The tools and permissions.</b> Which actions it may take without asking. The starter's <code>.claude/settings.json</code> already allows <code>python -m pytest</code>, <code>npx vitest</code> and anything under <code>scripts/</code>, so labs do not stall on prompts.</li>
+    <li><b>The context.</b> What it reads before acting: <code>CLAUDE.md</code>, <code>MIGRATION.md</code>, the source and the tests.</li>
+    <li><b>The loop's exits.</b> What check means done, and what limits end a run that is not getting there.</li>
+  </ul>
+  <p>Weeks 2 to 4 add more agents, and every one of them is still this loop. A team is several loops passing messages. A workflow is code that starts loops and collects their reports. If one loop is sloppy about checks and stopping, a hundred of them are sloppy at a hundred times the cost. That is why the first week spends five lessons on one agent.</p>
+  <div class="c-note"><p><b>Same ideas in code.</b> Everything here also exists in the Claude Agent SDK (<code>claude-agent-sdk</code> for Python, <code>@anthropic-ai/claude-agent-sdk</code> for TypeScript), where the model, tools, turn limit and budget are options on a <code>query</code> call. The labs use the CLI so you can watch the loop happen.</p></div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-01">
+    <div class="lab__head">
+      <span class="label">Lab 01 · In Claude Code</span>
+      <span class="lab__meta">~15 min · est. $0.10–$0.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Get the starter running, then watch one Claude Code session explore it and count the loop iterations.</p>
+      <ol class="lab__steps">
+        <li><p>Clone the course repo and copy the starter out into its own working folder. The course repo stays clean as the reference; every lab runs in your copy. You need Python 3.11 or newer, Node.js 22.12 or newer with npm, git and Claude Code. Commands are for a macOS or Linux shell. No access to the repo? Use the <b>Download kestrel-starter.zip</b> button on the Course home page and unzip it instead.</p>
+          <div class="cmd"><pre><code>git clone https://github.com/s3anstanz/scaling-agents.git
+cp -R scaling-agents/kestrel-starter ./kestrel-starter
+cd kestrel-starter</code></pre></div>
+        </li>
+        <li><p>Set up Python and run the reference tests. All 142 should pass. They are the behaviour the port must match. Activate the virtual environment in every new terminal you use for this course.</p>
+          <div class="cmd"><pre><code>python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install "pytest&gt;=8"
+python -m pytest -q</code></pre></div>
+        </li>
+        <li><p>Install the TypeScript toolchain (TypeScript, vitest and tsx) from the included lockfile. Do not run <code>npm test</code> yet: with no ported tests it prints <i>No test files found</i> and exits 1, which is expected.</p>
+          <div class="cmd"><pre><code>cd ts &amp;&amp; npm ci &amp;&amp; cd ..</code></pre></div>
+        </li>
+        <li><p>Turn the folder into a git repository with one starting commit. Later labs commit a checkpoint after each port so you can compare and reset, and Week 3's worktree labs need git. The starter's <code>.gitignore</code> already excludes <code>.venv</code> and <code>node_modules</code>. If git asks who you are, set <code>user.name</code> and <code>user.email</code> and rerun the commit.</p>
+          <div class="cmd"><pre><code>git init -q &amp;&amp; git add -A &amp;&amp; git commit -qm "Kestrel starter"
+git log --oneline</code></pre></div>
+        </li>
+        <li><p>Look at the work before any agent does. The first command prints the dependency waves; the second ends with <code>0/24 modules ported</code>.</p>
+          <div class="cmd"><pre><code>python scripts/deps.py --layers
+python scripts/status.py</code></pre></div>
+        </li>
+        <li><p>Start Claude Code in the repo root.</p>
+          <div class="cmd"><pre><code>claude</code></pre></div>
+        </li>
+        <li><p>Type this prompt. As it runs, count the tool calls. Each one is a trip around the loop.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Explain this repository in under 200 words: what Kestrel is, where the Python and TypeScript code live, and what counts as a ported module. Then run python scripts/deps.py --layers and tell me which modules can be ported first, and why. Do not edit any files.</code></pre></div>
+        </li>
+        <li><p>Now ask it to run the exit condition on a module that has not been ported yet.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Run scripts/verify.sh kestrel/core/errors.py and explain in two sentences what its exit code means right now.</code></pre></div>
+        </li>
+        <li><p>Check what the session cost, then quit with <code>/exit</code> or Ctrl+D.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>For the first prompt, a handful of tool calls (reads of <code>CLAUDE.md</code> or <code>MIGRATION.md</code>, a directory listing, the <code>deps.py</code> run), then a summary that names <code>core/errors</code> and <code>core/mathutil</code> as wave L0 because they import nothing else in Kestrel, with the 14-module wave L3 and a single <code>cli</code> at L6. For the second, one Bash call: the Python tests pass, then <code>verify.sh</code> fails with <i>TS port missing</i> and exits 1, because nothing is ported yet. <code>/usage</code> shows a cost in cents. Write down your count of tool calls for each prompt; you will compare against headless runs next lesson.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Ask the same first question in a fresh session started with <code>claude --model haiku</code>. Does it make the same tool calls in the same order? Different models plan different loops for the same task, and that difference shows up in cost long before it shows up in quality.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>An agent is a model choosing tool calls inside a loop, with each result fed back before the next choice. What it reads, how it checks, and when it stops are yours to design.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 02 · Designing the loop. Four stop conditions, and what goes wrong when one is missing.</div>
+</section>

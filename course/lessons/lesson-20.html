@@ -1,0 +1,485 @@
+<section class="lesson" id="lesson-20" data-week="4" data-title="Capstone: design the 100-agent migration" data-minutes="20">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 20</span>
+    <span class="meta">Week 4 · Scale</span>
+    <span class="meta">~20 min</span>
+    <span class="scale" data-scale="100">100 agents</span>
+  </div>
+  <h1>Capstone: design the 100-agent migration</h1>
+  <p class="lesson__deck">Nineteen lessons gave you the parts: loops, verification, roles, graph shapes, contracts, isolation, workflows, trees, breakers and a cost model. This lesson assembles them into one design for porting all of Kestrel, then has you build and run a scaled-down version of it end to end.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The problem, stated once</h2>
+  <p>Port the full Kestrel library, about 240 Python modules, to TypeScript. The dependency graph has 7 waves, and the middle wave is very wide (about 140 modules in the story). The critical path is 7 modules long. The traps are real: banker's rounding, floor division, negative modulo, default sort order, and PPM header parsing, plus whatever the full library adds that nobody has found yet.</p>
+  <p>Three requirements shape every decision. <b>Correct</b> means every module passes <code>scripts/verify.sh</code> and the TypeScript pipeline produces the same bytes as Python on every sample, as checked by <code>scripts/difftest.py</code>. <b>Affordable</b> means spend is bounded, and a broken dependency cannot burn a whole wave's budget. <b>Steerable</b> means a human can see what is happening, stop it, and approve the moments that matter, without reading 240 reports.</p>
+  <p>Recall what Anthropic's research post said: multi-agent systems fit poorly when agents need shared context or have many dependencies, which includes most coding tasks. Everything below is a way of removing those two obstacles before adding agents. The dependency graph removes the hidden dependencies. Contracts and shared files replace shared context. Isolation keeps parallel writers apart. Only then does the fleet make sense.</p>
+
+  <h2><span class="h2num">Part two</span>The design, layer by layer</h2>
+  <ol>
+    <li><b>Explore before committing: a double diamond on top.</b> The approach is genuinely uncertain. Should you port strictly wave by wave, attack the trap-heavy modules first, or port every test before any code? A wrong choice gets multiplied 240 times. So the first diamond diverges into three strategy agents and converges on one planner, which writes <code>PLAN.md</code>. Exploring costs a few agents; porting 240 modules the wrong way costs a few hundred.</li>
+    <li><b>Human checkpoint one: approve the plan.</b> You read <code>PLAN.md</code> and mark it approved. Nothing ports at scale until you do.</li>
+    <li><b>Build along the DAG.</b> The second diamond's fan-out follows <code>scripts/deps.py --layers</code>. Each wave is a barrier; within a wave, a pipeline moves each module through port, verify and fix on its own.</li>
+    <li><b>A tree of leads.</b> Sub-leads per package (and group leads under <code>ops/</code>, which is too wide for one) re-check red modules and send up five lines each. The top lead and you read only those.</li>
+    <li><b>Isolation and ownership.</b> Each porter owns its module's files and nothing else. At 240 modules and 100 agents, porters also get their own worktrees (<code>isolation: 'worktree'</code>) so a stray edit cannot reach a neighbour. One integrator is the only writer of <code>ts/src/index.ts</code> and the Known traps section of <code>MIGRATION.md</code>.</li>
+    <li><b>Loops at three levels.</b> A verify loop per module with a retry cap and an escalation to a stronger model. A canary and circuit breaker per wave. A budget guard before every wave, so the run stops at a clean boundary.</li>
+    <li><b>An end-to-end gate.</b> Unit tests can all pass while modules disagree about a contract. The difftest compares real output bytes from both implementations and bisects any mismatch to a module.</li>
+    <li><b>Human checkpoints two and three.</b> A small first run (one wave) before the full run, and your sign-off after the difftest.</li>
+  </ol>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 640" role="img" aria-label="The full migration design. Top: a lead fans out to three strategy agents that converge on a planner, which writes PLAN.md and waits for human approval. Middle: a wave loop reads status.py and fans out to package sub-leads, each running porters with verify loops. Bottom: results converge on an integrator, then a difftest gate, then a human sign-off. A dashed edge from the integrator returns to the wave loop for the next wave.">
+      <g class="g-node g-node--orch" data-node="lead"><rect x="300" y="10" width="120" height="40" rx="8"/><text x="360" y="35">Lead</text></g>
+      <g class="g-node g-node--worker" data-node="s1"><rect x="120" y="80" width="120" height="40" rx="8"/><text x="180" y="105">Waves first</text></g>
+      <g class="g-node g-node--worker" data-node="s2"><rect x="300" y="80" width="120" height="40" rx="8"/><text x="360" y="105">Traps first</text></g>
+      <g class="g-node g-node--worker" data-node="s3"><rect x="480" y="80" width="120" height="40" rx="8"/><text x="540" y="105">Tests first</text></g>
+      <g class="g-node g-node--orch" data-node="planner"><rect x="300" y="150" width="120" height="40" rx="8"/><text x="360" y="175">Planner</text></g>
+      <g class="g-node g-node--data" data-node="planmd"><rect x="480" y="150" width="120" height="40" rx="8"/><text x="540" y="175">PLAN.md</text></g>
+      <g class="g-node g-node--human" data-node="approve"><rect x="300" y="220" width="120" height="40" rx="8"/><text x="360" y="245">You approve</text></g>
+      <g class="g-node g-node--orch" data-node="waves"><rect x="300" y="290" width="120" height="40" rx="8"/><text x="360" y="315">Wave loop</text></g>
+      <g class="g-node g-node--data" data-node="status"><rect x="480" y="290" width="120" height="40" rx="8"/><text x="540" y="315">status.py</text></g>
+      <g class="g-node g-node--orch" data-node="sl1"><rect x="120" y="360" width="120" height="40" rx="8"/><text x="180" y="385">core lead</text></g>
+      <g class="g-node g-node--orch" data-node="sl2"><rect x="300" y="360" width="120" height="40" rx="8"/><text x="360" y="385">ops lead</text></g>
+      <g class="g-node g-node--orch" data-node="sl3"><rect x="480" y="360" width="120" height="40" rx="8"/><text x="540" y="385">io lead</text></g>
+      <g class="g-node g-node--worker" data-node="p1"><rect x="100" y="430" width="76" height="40" rx="8"/><text x="138" y="455">Porters</text></g>
+      <g class="g-node g-node--check" data-node="v1"><rect x="196" y="430" width="60" height="40" rx="8"/><text x="226" y="455">verify</text></g>
+      <g class="g-node g-node--worker" data-node="p2"><rect x="280" y="430" width="76" height="40" rx="8"/><text x="318" y="455">Porters</text></g>
+      <g class="g-node g-node--check" data-node="v2"><rect x="376" y="430" width="60" height="40" rx="8"/><text x="406" y="455">verify</text></g>
+      <g class="g-node g-node--worker" data-node="p3"><rect x="460" y="430" width="76" height="40" rx="8"/><text x="498" y="455">Porters</text></g>
+      <g class="g-node g-node--check" data-node="v3"><rect x="556" y="430" width="60" height="40" rx="8"/><text x="586" y="455">verify</text></g>
+      <g class="g-node g-node--worker" data-node="integ"><rect x="300" y="520" width="120" height="40" rx="8"/><text x="360" y="545">Integrator</text></g>
+      <g class="g-node g-node--check" data-node="diff"><rect x="300" y="590" width="120" height="40" rx="8"/><text x="360" y="615">difftest gate</text></g>
+      <g class="g-node g-node--human" data-node="sign"><rect x="480" y="590" width="120" height="40" rx="8"/><text x="540" y="615">You sign off</text></g>
+      <path class="g-edge" d="M360 50 C 360 65, 180 65, 180 80"/>
+      <path class="g-edge" d="M360 50 L360 80"/>
+      <path class="g-edge" d="M360 50 C 360 65, 540 65, 540 80"/>
+      <path class="g-edge" d="M180 120 C 180 135, 360 135, 360 150"/>
+      <path class="g-edge" d="M360 120 L360 150"/>
+      <path class="g-edge" d="M540 120 C 540 135, 360 135, 360 150"/>
+      <path class="g-edge" d="M420 170 L480 170"/>
+      <path class="g-edge" d="M360 190 L360 220"/>
+      <path class="g-edge" d="M360 260 L360 290"/>
+      <path class="g-edge g-edge--faint" d="M480 310 L420 310"/>
+      <path class="g-edge" d="M360 330 C 360 345, 180 345, 180 360"/>
+      <path class="g-edge" d="M360 330 L360 360"/>
+      <path class="g-edge" d="M360 330 C 360 345, 540 345, 540 360"/>
+      <path class="g-edge" d="M180 400 L138 430"/>
+      <path class="g-edge" d="M360 400 L318 430"/>
+      <path class="g-edge" d="M540 400 L498 430"/>
+      <path class="g-edge" d="M176 450 L196 450"/>
+      <path class="g-edge" d="M356 450 L376 450"/>
+      <path class="g-edge" d="M536 450 L556 450"/>
+      <path class="g-edge g-edge--loop" d="M206 470 C 206 492, 138 492, 138 472"/>
+      <path class="g-edge g-edge--loop" d="M386 470 C 386 492, 318 492, 318 472"/>
+      <path class="g-edge g-edge--loop" d="M566 470 C 566 492, 498 492, 498 472"/>
+      <path class="g-edge" d="M246 470 C 246 500, 320 495, 320 520"/>
+      <path class="g-edge" d="M406 470 L406 520"/>
+      <path class="g-edge" d="M586 470 C 586 530, 450 540, 420 540"/>
+      <path class="g-edge g-edge--loop" d="M300 545 C -20 545, -20 310, 300 310"/>
+      <path class="g-edge" d="M360 560 L360 590"/>
+      <path class="g-edge" d="M420 610 L480 610"/>
+      <text class="g-cap" x="10" y="105">explore</text>
+      <text class="g-cap" x="10" y="175">choose</text>
+      <text class="g-cap" x="14" y="330">next wave</text>
+      <text class="g-cap" x="608" y="315">breaker, budget</text>
+      <text class="g-cap" x="608" y="385">+2 more leads</text>
+      <text class="g-cap" x="624" y="455">verify loops</text>
+      <text class="g-cap" x="290" y="615" text-anchor="end">fail: bisect</text>
+    </svg>
+    <figcaption>The whole design. Diamond one (explore, choose) sits above the first human checkpoint. Diamond two (fan out by wave and package, converge on the integrator) repeats once per wave. For Kestrel-240, picture 5–10 sub-leads with about ten porters each, worktrees per porter, and group leads under <code>ops/</code>.</figcaption>
+  </figure>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Look at the figure and pick the one component whose removal would hurt most at 100 agents. The tree? The breaker? The double diamond? Something else?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>The small <code>verify</code> boxes. Every other part of the design assumes that "green" means something: the breaker counts red, the sub-leads count green, idempotent reruns skip green, the integrator exports green, and the cost model divides by green. Remove the mechanical check and all of them start optimising for "the agent said it was done", which is the Lesson 4 failure multiplied by a hundred. A close second is the dependency graph, because without it parallel agents guess at APIs that do not exist yet.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>How many agents, and which shape?</h2>
+  <p>The capstone uses every tool, but most problems should not. The scale of a system should follow from the work, and the shapes from Lesson 9 tell you what the work looks like. Here is the whole course as one decision guide.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Scale</th><th>Use it when</th><th>Shape</th><th>Orchestration</th><th>Main risk</th><th>Kestrel example</th></tr></thead>
+      <tbody>
+        <tr><td><b>1 agent</b></td><td>The work is tightly coupled, fits in one context, and has a fast check</td><td>Loop (cycle)</td><td>One session, a stop hook, a turn and budget cap</td><td>Stopping at "looks done"</td><td><code>core/geometry</code> and <code>core/image</code> in one session (Lesson 5)</td></tr>
+        <tr><td><b>3–5 agents</b></td><td>A few independent pieces, or a need for independent judgment</td><td>Diamond, double diamond, review cycle</td><td>A lead with subagents, model-driven</td><td>Lossy handoffs; about 15x the tokens of a chat</td><td>Three ops in parallel, a reviewer on <code>ops/pad</code> (Lessons 6–10)</td></tr>
+        <tr><td><b>10–25 agents</b></td><td>The work is a DAG with wide waves, and contracts and isolation are in place</td><td>DAG waves, hub-and-spoke, blackboard</td><td>A lead plus subagents or headless runs, or a workflow</td><td>Shared-file collisions and contract drift</td><td>The 14 modules of wave L3 (Lessons 11–15)</td></tr>
+        <tr><td><b>100 agents</b></td><td>Hundreds of similar units, a proven recipe, a mechanical check, and a deadline that values hours</td><td>Double diamond on top, tree of leads, DAG waves, verify loops</td><td>A saved workflow with sub-leads, breakers, budgets and human checkpoints</td><td>Correlated failure, coordination tax, blast radius of a bad rule</td><td>Kestrel-240 (Lessons 16–20)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Move down a row only when the row above stops working. Each step down adds cost and coordination that must buy something you can name.</p>
+  <p>Notice the "proven recipe" condition in the last row. A 100-agent run multiplies whatever your recipe does, good or bad. That is why the Week 4 labs started small: one wave, then a canary, then the whole starter. You would never launch 100 agents on a recipe you had not watched work on 24.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Why does the design open with a double diamond (three strategies, then a planner) instead of starting wave L0 straight away?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">More agents at the start produce a higher-quality port overall</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">The approach is uncertain and gets multiplied 240 times, so a cheap exploration before committing pays for itself</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The planner needs three opinions to compute the dependency waves</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Workflows require a <code>parallel()</code> call before the first <code>pipeline()</code></span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Agent count is not quality. Three strategy agents help only because they explore genuinely different approaches to a decision that is expensive to get wrong.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>That is the rule from Lesson 9: use a double diamond when the approach is uncertain and the execution is parallel. A few agents comparing waves-first, traps-first and tests-first cost little next to 240 ports done the wrong way.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>The waves come from <code>scripts/deps.py --layers</code>, a script with one right answer. Strategy agents choose how to use the waves, not what they are.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>No such rule exists. A workflow can start with any call. The order here is a design choice.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>A workflow script cannot stop and ask you a question mid-run. Where do the human checkpoints go, and how are they enforced?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">After every module, by pausing <code>/workflows</code> and reading each diff</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Nowhere; at 100 agents a human only slows the run down</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Only at the end, by reviewing the final diff of all 240 modules</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="true"><span class="k">D</span><span class="t">At run boundaries: after the plan, after a small first run, and after the difftest, with the next run refusing to start without your mark</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Reviewing 240 diffs one by one makes you the bottleneck and the tired reviewer at the same time. The verify gate already checks each module mechanically.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>The decisions that set the cost of everything else (which strategy, whether the recipe works) are exactly where a few minutes of human judgment buy the most.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>By then the strategy, the recipe and the budget have all been spent. A checkpoint that can only say "redo everything" comes too late to steer.</p></div>
+        <div class="fb" data-fb="d" data-verdict="right"><div class="vd">Yes</div><p>Each checkpoint sits where a cheap look prevents an expensive mistake. In <code>migrate.js</code> the full run needs <code>--plan-approved</code>, and the planner returns no waves unless <code>PLAN.md</code> starts with your <code>APPROVED</code> line.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="ownership">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>For the 24-module starter run in today's lab, should each porter get its own worktree?</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>Every porter owns a distinct pair of files: its module and its test.</li><li>Porters never touch <code>ts/src/index.ts</code> or <code>MIGRATION.md</code>; one integrator writes both.</li><li>At most 14 porters run at once.</li><li>Worktrees would need a merge step after every wave.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="worktrees">Worktrees</button>
+        <button class="vbtn" data-pick="ownership">File ownership is enough</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="worktrees"><span class="verdict-tag" data-v="fail">Not quite</span><p>Safe, but you pay for a merge stage that solves no problem you have. With disjoint files and a single writer for shared ones, there is nothing for 14 porters to collide on.</p></div>
+        <div class="vfb" data-for="ownership"><span class="verdict-tag" data-v="pass">Right call</span><p>Ownership rules already make collisions impossible at this size. At 240 modules and 100 agents the odds of one stray edit rise, and so does the cost of finding it, which is when the design adds worktrees and a merge step.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>The design as one workflow</h2>
+  <p>Here is the design written as a single workflow, sized for the starter. It runs in two modes. <code>--small</code> explores, plans and ports only the first wave, so you can check the recipe. <code>--plan-approved</code> skips exploration, ports every remaining wave and finishes with the difftest. At 24 modules the script plays the lead and the sub-leads only summarise; at 240 each sub-lead would own its package's pipeline, as in Lesson 17. Click the marked lines.</p>
+
+  <div class="c-code wide" data-component="code">
+  <div class="c-code__head"><span>.claude/workflows/migrate.js</span><span class="tag">Click a marked line</span></div>
+  <div class="c-code__grid">
+    <ol class="c-code__lines">
+      <li><div class="cl"><span class="ln">1</span><pre><span class="tk-kw">export</span> <span class="tk-kw">const</span> meta = {</pre></div></li>
+      <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">name</span>: <span class="tk-str">'migrate'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">3</span><pre>  <span class="tk-key">description</span>: <span class="tk-str">'Port Kestrel to TypeScript: explore strategies, plan, port waves with verify loops and a breaker, integrate, difftest'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">4</span><pre>  <span class="tk-key">phases</span>: [{ <span class="tk-key">title</span>: <span class="tk-str">'Explore'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Plan'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Port'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Integrate'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Verify'</span> }]</pre></div></li>
+      <li><div class="cl"><span class="ln">5</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">6</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n1"><span class="ln">7</span><pre><span class="tk-kw">const</span> flags = <span class="tk-kw">typeof</span> args === <span class="tk-str">'string'</span> ? args : JSON.stringify(args ?? {})</pre></button></li>
+      <li><div class="cl"><span class="ln">8</span><pre><span class="tk-kw">const</span> small = flags.includes(<span class="tk-str">'small'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">9</span><pre><span class="tk-kw">const</span> approved = flags.includes(<span class="tk-str">'plan-approved'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">10</span><pre><span class="tk-kw">const</span> BREAKER = <span class="tk-num">0.3</span></pre></div></li>
+      <li><div class="cl"><span class="ln">11</span><pre><span class="tk-kw">const</span> MAX_FIXES = <span class="tk-num">2</span></pre></div></li>
+      <li><button class="cl" data-note="n2"><span class="ln">12</span><pre><span class="tk-kw">const</span> lowBudget = () =&gt; budget.total &gt; <span class="tk-num">0</span> &amp;&amp; budget.remaining() &lt; budget.total * <span class="tk-num">0.15</span></pre></button></li>
+      <li><div class="cl"><span class="ln">13</span><pre><span class="tk-kw">const</span> pkg = (m) =&gt; m.split(<span class="tk-str">'/'</span>)[<span class="tk-num">0</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">14</span><pre><span class="tk-kw">const</span> redShare = (rs) =&gt; rs.length ? rs.filter((r) =&gt; r.status === <span class="tk-str">'failed'</span> || r.status === <span class="tk-str">'blocked'</span>).length / rs.length : <span class="tk-num">0</span></pre></div></li>
+      <li><button class="cl" data-note="n3"><span class="ln">15</span><pre><span class="tk-kw">const</span> RULES = <span class="tk-str">'Follow MIGRATION.md and port every Python test as it("test_name"). Edit only this module\'s files under ts/src and ts/test. '</span> +</pre></button></li>
+      <li><div class="cl"><span class="ln">16</span><pre>  <span class="tk-str">'Never edit ts/src/index.ts, MIGRATION.md or another module. If a dependency looks broken, stop and return status "blocked".'</span></pre></div></li>
+      <li><div class="cl"><span class="ln">17</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">18</span><pre><span class="tk-kw">const</span> list = { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } }</pre></div></li>
+      <li><div class="cl"><span class="ln">19</span><pre><span class="tk-kw">const</span> strategySchema = { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">name</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> }, <span class="tk-key">order</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> }, <span class="tk-key">risks</span>: list }, <span class="tk-key">required</span>: [<span class="tk-str">'name'</span>, <span class="tk-str">'order'</span>, <span class="tk-str">'risks'</span>] }</pre></div></li>
+      <li><div class="cl"><span class="ln">20</span><pre><span class="tk-kw">const</span> planSchema = { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">waves</span>: { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: list } }, <span class="tk-key">required</span>: [<span class="tk-str">'waves'</span>] }</pre></div></li>
+      <li><div class="cl"><span class="ln">21</span><pre><span class="tk-kw">const</span> resultSchema = {</pre></div></li>
+      <li><div class="cl"><span class="ln">22</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">23</span><pre>  <span class="tk-key">properties</span>: { <span class="tk-key">module</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> }, <span class="tk-key">status</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span>, <span class="tk-key">enum</span>: [<span class="tk-str">'passed'</span>, <span class="tk-str">'failed'</span>, <span class="tk-str">'skipped'</span>, <span class="tk-str">'blocked'</span>] }, <span class="tk-key">traps</span>: list, <span class="tk-key">error</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } },</pre></div></li>
+      <li><div class="cl"><span class="ln">24</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'module'</span>, <span class="tk-str">'status'</span>, <span class="tk-str">'traps'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">25</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">26</span><pre><span class="tk-kw">const</span> verifySchema = { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">passed</span>: { <span class="tk-key">type</span>: <span class="tk-str">'boolean'</span> }, <span class="tk-key">error</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } }, <span class="tk-key">required</span>: [<span class="tk-str">'passed'</span>] }</pre></div></li>
+      <li><div class="cl"><span class="ln">27</span><pre><span class="tk-kw">const</span> e2eSchema = { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">specs</span>: list, <span class="tk-key">failing</span>: list, <span class="tk-key">suspect</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } }, <span class="tk-key">required</span>: [<span class="tk-str">'specs'</span>, <span class="tk-str">'failing'</span>] }</pre></div></li>
+      <li><div class="cl"><span class="ln">28</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">29</span><pre><span class="tk-kw">let</span> strategies = []</pre></div></li>
+      <li><div class="cl"><span class="ln">30</span><pre><span class="tk-kw">if</span> (!approved) {</pre></div></li>
+      <li><button class="cl" data-note="n4"><span class="ln">31</span><pre>  phase(<span class="tk-str">'Explore'</span>)</pre></button></li>
+      <li><div class="cl"><span class="ln">32</span><pre>  <span class="tk-kw">const</span> angles = [<span class="tk-str">'strict dependency waves'</span>, <span class="tk-str">'trap-first: risky modules early'</span>, <span class="tk-str">'test-first: port every test before any code'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">33</span><pre>  strategies = (<span class="tk-kw">await</span> parallel(angles.map((a) =&gt; () =&gt; agent(</pre></div></li>
+      <li><div class="cl"><span class="ln">34</span><pre>    <span class="tk-str">`Propose a plan to port kestrel/ to ts/ from this angle: ${a}. Read MIGRATION.md and run python scripts/deps.py --layers and --critical. Edit nothing.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">35</span><pre>    { <span class="tk-key">label</span>: <span class="tk-str">`strategy: ${a}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span>, <span class="tk-key">schema</span>: strategySchema })))).filter(Boolean)</pre></div></li>
+      <li><div class="cl"><span class="ln">36</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">37</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">38</span><pre>phase(<span class="tk-str">'Plan'</span>)</pre></div></li>
+      <li><button class="cl" data-note="n5"><span class="ln">39</span><pre><span class="tk-kw">const</span> plan = <span class="tk-kw">await</span> agent(</pre></button></li>
+      <li><div class="cl"><span class="ln">40</span><pre>  (approved</pre></div></li>
+      <li><button class="cl" data-note="n6"><span class="ln">41</span><pre>    ? <span class="tk-str">'PLAN.md should start with a line containing APPROVED. If it does not, return an empty waves list. Otherwise return its waves as written.'</span></pre></button></li>
+      <li><div class="cl"><span class="ln">42</span><pre>    : <span class="tk-str">`Choose or merge these strategies into one plan: ${JSON.stringify(strategies)}. Write PLAN.md with waves from python scripts/deps.py --layers, risks and traps to watch.`</span>) +</pre></div></li>
+      <li><div class="cl"><span class="ln">43</span><pre>    <span class="tk-str">' Use module ids like core/color, as python scripts/deps.py --layers prints them, and drop any module that python scripts/status.py --json shows as passing.'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">44</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'planner'</span>, <span class="tk-key">model</span>: <span class="tk-str">'opus'</span>, <span class="tk-key">schema</span>: planSchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">45</span><pre><span class="tk-kw">if</span> (!plan) <span class="tk-kw">throw</span> <span class="tk-kw">new</span> Error(<span class="tk-str">'Planner returned nothing; nothing was ported.'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">46</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n7"><span class="ln">47</span><pre><span class="tk-kw">const</span> port = <span class="tk-kw">async</span> (m) =&gt; (<span class="tk-kw">await</span> agent(</pre></button></li>
+      <li><div class="cl"><span class="ln">48</span><pre>  <span class="tk-str">`Port ${m} and its tests to TypeScript. First run python scripts/status.py --json; if ${m} is already passing, return "skipped". ${RULES}</span></pre></div></li>
+      <li><div class="cl"><span class="ln">49</span><pre><span class="tk-str">You are done only when scripts/verify.sh ${m} exits 0. List any new Python-vs-JS trap you hit.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">50</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">`port ${m}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: resultSchema })) ?? { <span class="tk-key">module</span>: m, <span class="tk-key">status</span>: <span class="tk-str">'failed'</span>, <span class="tk-key">traps</span>: [], <span class="tk-key">error</span>: <span class="tk-str">'agent returned nothing'</span> }</pre></div></li>
+      <li><div class="cl"><span class="ln">51</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n8"><span class="ln">52</span><pre><span class="tk-kw">const</span> verify = <span class="tk-kw">async</span> (r) =&gt; {</pre></button></li>
+      <li><div class="cl"><span class="ln">53</span><pre>  <span class="tk-kw">if</span> (r.status === <span class="tk-str">'skipped'</span> || r.status === <span class="tk-str">'blocked'</span>) <span class="tk-kw">return</span> r</pre></div></li>
+      <li><div class="cl"><span class="ln">54</span><pre>  <span class="tk-kw">const</span> v = <span class="tk-kw">await</span> agent(<span class="tk-str">`Run scripts/verify.sh ${r.module}. Edit nothing. passed is true only if it exits 0; error is the first failing line.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">55</span><pre>    { <span class="tk-key">label</span>: <span class="tk-str">`verify ${r.module}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: verifySchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">56</span><pre>  <span class="tk-kw">return</span> { ...r, <span class="tk-key">status</span>: v?.passed ? <span class="tk-str">'passed'</span> : <span class="tk-str">'failed'</span>, <span class="tk-key">error</span>: v?.error ?? r.error }</pre></div></li>
+      <li><div class="cl"><span class="ln">57</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">58</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n9"><span class="ln">59</span><pre><span class="tk-kw">const</span> fixLoop = <span class="tk-kw">async</span> (r) =&gt; {</pre></button></li>
+      <li><div class="cl"><span class="ln">60</span><pre>  <span class="tk-kw">for</span> (<span class="tk-kw">let</span> i = <span class="tk-num">1</span>; i &lt;= MAX_FIXES &amp;&amp; r.status === <span class="tk-str">'failed'</span>; i++) {</pre></div></li>
+      <li><div class="cl"><span class="ln">61</span><pre>    <span class="tk-kw">const</span> f = <span class="tk-kw">await</span> agent(</pre></div></li>
+      <li><div class="cl"><span class="ln">62</span><pre>      <span class="tk-str">`scripts/verify.sh ${r.module} fails with: ${r.error ?? 'unknown'}. Read the failure, then fix ${r.module}. ${RULES} You are done only when scripts/verify.sh ${r.module} exits 0.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">63</span><pre>      { <span class="tk-key">label</span>: <span class="tk-str">`fix ${r.module} #${i}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span>, <span class="tk-key">schema</span>: resultSchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">64</span><pre>    r = <span class="tk-kw">await</span> verify({ ...r, ...(f ?? {}), <span class="tk-key">module</span>: r.module })</pre></div></li>
+      <li><div class="cl"><span class="ln">65</span><pre>  }</pre></div></li>
+      <li><div class="cl"><span class="ln">66</span><pre>  <span class="tk-kw">return</span> r</pre></div></li>
+      <li><div class="cl"><span class="ln">67</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">68</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">69</span><pre>phase(<span class="tk-str">'Port'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">70</span><pre><span class="tk-kw">const</span> results = []</pre></div></li>
+      <li><div class="cl"><span class="ln">71</span><pre><span class="tk-kw">let</span> halted = <span class="tk-str">''</span></pre></div></li>
+      <li><div class="cl"><span class="ln">72</span><pre><span class="tk-kw">const</span> waves = small ? plan.waves.slice(<span class="tk-num">0</span>, <span class="tk-num">1</span>) : plan.waves</pre></div></li>
+      <li><div class="cl"><span class="ln">73</span><pre><span class="tk-kw">for</span> (<span class="tk-kw">const</span> [i, wave] <span class="tk-kw">of</span> waves.entries()) {</pre></div></li>
+      <li><div class="cl"><span class="ln">74</span><pre>  <span class="tk-kw">if</span> (wave.length === <span class="tk-num">0</span>) <span class="tk-kw">continue</span></pre></div></li>
+      <li><div class="cl"><span class="ln">75</span><pre>  <span class="tk-kw">if</span> (lowBudget()) { halted = <span class="tk-str">`budget low before wave ${i + 1}`</span>; <span class="tk-kw">break</span> }</pre></div></li>
+      <li><button class="cl" data-note="n10"><span class="ln">76</span><pre>  <span class="tk-kw">const</span> canary = wave.length &gt; <span class="tk-num">6</span> ? wave.slice(<span class="tk-num">0</span>, <span class="tk-num">3</span>) : []</pre></button></li>
+      <li><button class="cl" data-note="n11"><span class="ln">77</span><pre>  <span class="tk-kw">const</span> first = canary.length ? (<span class="tk-kw">await</span> pipeline(canary, port, verify, fixLoop)).filter(Boolean) : []</pre></button></li>
+      <li><div class="cl"><span class="ln">78</span><pre>  <span class="tk-kw">if</span> (redShare(first) &gt; BREAKER) { results.push(...first); halted = <span class="tk-str">`canaries red in wave ${i + 1}`</span>; <span class="tk-kw">break</span> }</pre></div></li>
+      <li><div class="cl"><span class="ln">79</span><pre>  <span class="tk-kw">const</span> done = first.concat((<span class="tk-kw">await</span> pipeline(wave.slice(canary.length), port, verify, fixLoop)).filter(Boolean))</pre></div></li>
+      <li><div class="cl"><span class="ln">80</span><pre>  results.push(...done)</pre></div></li>
+      <li><div class="cl"><span class="ln">81</span><pre>  log(<span class="tk-str">`Wave ${i + 1}: ${Math.round((1 - redShare(done)) * done.length)}/${done.length} green`</span>)</pre></div></li>
+      <li><button class="cl" data-note="n12"><span class="ln">82</span><pre>  <span class="tk-kw">if</span> (redShare(done) &gt; BREAKER) { halted = <span class="tk-str">`breaker tripped in wave ${i + 1}`</span>; <span class="tk-kw">break</span> }</pre></button></li>
+      <li><div class="cl"><span class="ln">83</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">84</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">85</span><pre>phase(<span class="tk-str">'Integrate'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">86</span><pre><span class="tk-kw">const</span> pkgs = [...<span class="tk-kw">new</span> Set(results.map((r) =&gt; pkg(r.module)))]</pre></div></li>
+      <li><div class="cl"><span class="ln">87</span><pre><span class="tk-kw">const</span> summaries = (<span class="tk-kw">await</span> parallel(pkgs.map((p) =&gt; () =&gt; agent(</pre></div></li>
+      <li><button class="cl" data-note="n13"><span class="ln">88</span><pre>  <span class="tk-str">`You are the sub-lead for the ${p} package. Results: ${JSON.stringify(results.filter((r) =&gt; pkg(r.module) === p))}.</span></pre></button></li>
+      <li><div class="cl"><span class="ln">89</span><pre><span class="tk-str">Re-run scripts/verify.sh for each module marked failed or blocked. Edit nothing.</span></pre></div></li>
+      <li><div class="cl"><span class="ln">90</span><pre><span class="tk-str">Reply in at most 5 lines: green count, red modules with a one-line cause each, traps worth recording.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">91</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">`sub-lead ${p}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span> })))).filter(Boolean)</pre></div></li>
+      <li><div class="cl"><span class="ln">92</span><pre>summaries.forEach((s) =&gt; log(s))</pre></div></li>
+      <li><div class="cl"><span class="ln">93</span><pre><span class="tk-kw">await</span> agent(</pre></div></li>
+      <li><button class="cl" data-note="n14"><span class="ln">94</span><pre>  <span class="tk-str">`You are the only writer of shared files. Regenerate ts/src/index.ts by running python scripts/gen_barrel.py.</span></pre></button></li>
+      <li><div class="cl"><span class="ln">95</span><pre><span class="tk-str">Append these traps to the Known traps section of MIGRATION.md, skipping duplicates: ${JSON.stringify([...new Set(results.flatMap((r) =&gt; r.traps ?? []))])}.</span></pre></div></li>
+      <li><div class="cl"><span class="ln">96</span><pre><span class="tk-str">Then run npm test inside ts/ and report its summary line.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">97</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'integrator'</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span> })</pre></div></li>
+      <li><div class="cl"><span class="ln">98</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">99</span><pre><span class="tk-kw">if</span> (!small &amp;&amp; !halted) {</pre></div></li>
+      <li><div class="cl"><span class="ln">100</span><pre>  phase(<span class="tk-str">'Verify'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">101</span><pre>  <span class="tk-kw">const</span> e2e = <span class="tk-kw">await</span> agent(</pre></div></li>
+      <li><button class="cl" data-note="n15"><span class="ln">102</span><pre>    <span class="tk-str">'Run python scripts/difftest.py "gray|threshold:128", then two more specs built from the step names in kestrel/pipeline/steps.py. Edit nothing. Exit code 1 means a mismatch; exit code 2 means ts/src/cli.ts is not ported yet, so count it as failing. '</span> +</pre></button></li>
+      <li><div class="cl"><span class="ln">103</span><pre>    <span class="tk-str">'For each failing spec, bisect with shorter specs and name the first module whose output differs.'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">104</span><pre>    { <span class="tk-key">label</span>: <span class="tk-str">'difftest gate'</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span>, <span class="tk-key">schema</span>: e2eSchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">105</span><pre>  log(e2e ? <span class="tk-str">`difftest: ${e2e.specs.length - e2e.failing.length}/${e2e.specs.length} specs match. Suspect: ${e2e.suspect || 'none'}`</span> : <span class="tk-str">'difftest agent failed'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">106</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">107</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">108</span><pre><span class="tk-kw">const</span> green = results.filter((r) =&gt; r.status === <span class="tk-str">'passed'</span> || r.status === <span class="tk-str">'skipped'</span>).length</pre></div></li>
+      <li><button class="cl" data-note="n16"><span class="ln">109</span><pre><span class="tk-kw">const</span> next = halted ? <span class="tk-str">`Halted: ${halted}. Fix the cause and rerun; green modules are skipped.`</span></pre></button></li>
+      <li><div class="cl"><span class="ln">110</span><pre>  : small ? <span class="tk-str">'Small run done. Review PLAN.md, add APPROVED at the top, then run /migrate --plan-approved.'</span></pre></div></li>
+      <li><div class="cl"><span class="ln">111</span><pre>    : <span class="tk-str">'Ready for your sign-off.'</span></pre></div></li>
+      <li><div class="cl"><span class="ln">112</span><pre>log(<span class="tk-str">`${green}/${results.length} modules green. ${next}`</span>)</pre></div></li>
+    </ol>
+    <div class="c-code__notes">
+      <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line to see why it is there.</p></div>
+      <div class="cnote" data-note="n1"><div class="label">Line 7 · two run modes</div><p><code>--small</code> runs one wave as a dry run. <code>--plan-approved</code> skips exploration and uses the plan you signed off. The script accepts the arguments as a string or an object.</p></div>
+      <div class="cnote" data-note="n2"><div class="label">Line 12 · budget guard</div><p>Checked before every wave. When less than 15% of the budget is left, the run stops at a wave boundary, where everything is either green or clearly not.</p></div>
+      <div class="cnote" data-note="n3"><div class="label">Line 15 · ownership rules</div><p>One string reused in every worker prompt: own your module's files, never the barrel, never <code>MIGRATION.md</code>, report blocked dependencies. This is Lesson 14's isolation, written as policy.</p></div>
+      <div class="cnote" data-note="n4"><div class="label">Line 31 · diamond one, diverge</div><p>Three agents propose different strategies in parallel. Exploration is cheap compared with porting 240 modules the wrong way.</p></div>
+      <div class="cnote" data-note="n5"><div class="label">Line 39 · diamond one, converge</div><p>One planner on the strongest model chooses or merges the strategies and writes <code>PLAN.md</code>. This is the one place in the run where judgment matters most, so it gets <code>opus</code>.</p></div>
+      <div class="cnote" data-note="n6"><div class="label">Line 41 · human checkpoint</div><p>The script cannot ask you a question, so the checkpoint is a run boundary. You read <code>PLAN.md</code>, add <code>APPROVED</code>, and start the next run. Without that line, the planner returns no waves.</p></div>
+      <div class="cnote" data-note="n7"><div class="label">Line 47 · idempotent porter</div><p>Checks status first and skips green modules. That is what makes a halted run safe to restart.</p></div>
+      <div class="cnote" data-note="n8"><div class="label">Line 52 · independent verify</div><p>A separate agent runs <code>scripts/verify.sh</code> and edits nothing. Its exit code, not the porter's claim, sets the status.</p></div>
+      <div class="cnote" data-note="n9"><div class="label">Line 59 · the verify loop</div><p>Up to two fix rounds on <code>sonnet</code>, each fed the last error, each re-verified. Escalating the model only on failure keeps the bulk work cheap.</p></div>
+      <div class="cnote" data-note="n10"><div class="label">Line 76 · canary for wide waves</div><p>Waves wider than six send three modules first. The starter's L3 wave of 14 gets a canary; the small waves just run.</p></div>
+      <div class="cnote" data-note="n11"><div class="label">Line 77 · diamond two, diverge</div><p>Port, verify and fix flow per module with no barrier. The wave boundary is the only barrier, because the next wave depends on this one.</p></div>
+      <div class="cnote" data-note="n12"><div class="label">Line 82 · circuit breaker</div><p>If more than 30% of a wave is red (an illustrative threshold), stop before the next wave builds on broken modules.</p></div>
+      <div class="cnote" data-note="n13"><div class="label">Line 88 · sub-leads</div><p>One sub-lead per package re-checks red modules and writes five lines. At 24 modules the script itself plays lead; at 240 each sub-lead would own its package's pipeline, as in Lesson 17.</p></div>
+      <div class="cnote" data-note="n14"><div class="label">Line 94 · single writer</div><p>One integrator regenerates the barrel with <code>scripts/gen_barrel.py</code> and appends traps. No porter ever touches those files, so parallel porters cannot conflict on them.</p></div>
+      <div class="cnote" data-note="n15"><div class="label">Line 102 · the end-to-end gate</div><p>Every module can pass its own tests while the pipeline still produces different bytes. The difftest compares real output from Python and TypeScript, and bisects when they differ.</p></div>
+      <div class="cnote" data-note="n16"><div class="label">Line 109 · hand back to a human</div><p>Every run ends with an instruction for you: fix and rerun, approve the plan, or sign off.</p></div>
+    </div>
+  </div>
+</div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-20">
+    <div class="lab__head">
+      <span class="label">Lab 20 · In Claude Code</span>
+      <span class="lab__meta">~45 min · est. $5–$12</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run the full design against the starter: a small first run, your approval, the full run with its difftest gate, then a one-page retrospective.</p>
+      <ol class="lab__steps">
+        <li><p>Reset the port in <code>kestrel-scale/</code>.</p>
+          <div class="cmd"><pre><code>cd kestrel-scale
+git add -A &amp;&amp; git commit -qm "before lab 20" --allow-empty
+git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts
+rm -f PLAN.md</code></pre></div>
+        </li>
+        <li><p>Create the workflow. You can paste it as is, or ask Claude to write it from the design in Part two and compare the result with this reference.</p>
+          <div class="cmd" data-file=".claude/workflows/migrate.js"><pre><code>export const meta = {
+  name: 'migrate',
+  description: 'Port Kestrel to TypeScript: explore strategies, plan, port waves with verify loops and a breaker, integrate, difftest',
+  phases: [{ title: 'Explore' }, { title: 'Plan' }, { title: 'Port' }, { title: 'Integrate' }, { title: 'Verify' }]
+}
+
+const flags = typeof args === 'string' ? args : JSON.stringify(args ?? {})
+const small = flags.includes('small')
+const approved = flags.includes('plan-approved')
+const BREAKER = 0.3
+const MAX_FIXES = 2
+const lowBudget = () =&gt; budget.total &gt; 0 &amp;&amp; budget.remaining() &lt; budget.total * 0.15
+const pkg = (m) =&gt; m.split('/')[0]
+const redShare = (rs) =&gt; rs.length ? rs.filter((r) =&gt; r.status === 'failed' || r.status === 'blocked').length / rs.length : 0
+const RULES = 'Follow MIGRATION.md and port every Python test as it("test_name"). Edit only this module\'s files under ts/src and ts/test. ' +
+  'Never edit ts/src/index.ts, MIGRATION.md or another module. If a dependency looks broken, stop and return status "blocked".'
+
+const list = { type: 'array', items: { type: 'string' } }
+const strategySchema = { type: 'object', properties: { name: { type: 'string' }, order: { type: 'string' }, risks: list }, required: ['name', 'order', 'risks'] }
+const planSchema = { type: 'object', properties: { waves: { type: 'array', items: list } }, required: ['waves'] }
+const resultSchema = {
+  type: 'object',
+  properties: { module: { type: 'string' }, status: { type: 'string', enum: ['passed', 'failed', 'skipped', 'blocked'] }, traps: list, error: { type: 'string' } },
+  required: ['module', 'status', 'traps']
+}
+const verifySchema = { type: 'object', properties: { passed: { type: 'boolean' }, error: { type: 'string' } }, required: ['passed'] }
+const e2eSchema = { type: 'object', properties: { specs: list, failing: list, suspect: { type: 'string' } }, required: ['specs', 'failing'] }
+
+let strategies = []
+if (!approved) {
+  phase('Explore')
+  const angles = ['strict dependency waves', 'trap-first: risky modules early', 'test-first: port every test before any code']
+  strategies = (await parallel(angles.map((a) =&gt; () =&gt; agent(
+    `Propose a plan to port kestrel/ to ts/ from this angle: ${a}. Read MIGRATION.md and run python scripts/deps.py --layers and --critical. Edit nothing.`,
+    { label: `strategy: ${a}`, model: 'sonnet', schema: strategySchema })))).filter(Boolean)
+}
+
+phase('Plan')
+const plan = await agent(
+  (approved
+    ? 'PLAN.md should start with a line containing APPROVED. If it does not, return an empty waves list. Otherwise return its waves as written.'
+    : `Choose or merge these strategies into one plan: ${JSON.stringify(strategies)}. Write PLAN.md with waves from python scripts/deps.py --layers, risks and traps to watch.`) +
+    ' Use module ids like core/color, as python scripts/deps.py --layers prints them, and drop any module that python scripts/status.py --json shows as passing.',
+  { label: 'planner', model: 'opus', schema: planSchema })
+if (!plan) throw new Error('Planner returned nothing; nothing was ported.')
+
+const port = async (m) =&gt; (await agent(
+  `Port ${m} and its tests to TypeScript. First run python scripts/status.py --json; if ${m} is already passing, return "skipped". ${RULES}
+You are done only when scripts/verify.sh ${m} exits 0. List any new Python-vs-JS trap you hit.`,
+  { label: `port ${m}`, model: 'haiku', schema: resultSchema })) ?? { module: m, status: 'failed', traps: [], error: 'agent returned nothing' }
+
+const verify = async (r) =&gt; {
+  if (r.status === 'skipped' || r.status === 'blocked') return r
+  const v = await agent(`Run scripts/verify.sh ${r.module}. Edit nothing. passed is true only if it exits 0; error is the first failing line.`,
+    { label: `verify ${r.module}`, model: 'haiku', schema: verifySchema })
+  return { ...r, status: v?.passed ? 'passed' : 'failed', error: v?.error ?? r.error }
+}
+
+const fixLoop = async (r) =&gt; {
+  for (let i = 1; i &lt;= MAX_FIXES &amp;&amp; r.status === 'failed'; i++) {
+    const f = await agent(
+      `scripts/verify.sh ${r.module} fails with: ${r.error ?? 'unknown'}. Read the failure, then fix ${r.module}. ${RULES} You are done only when scripts/verify.sh ${r.module} exits 0.`,
+      { label: `fix ${r.module} #${i}`, model: 'sonnet', schema: resultSchema })
+    r = await verify({ ...r, ...(f ?? {}), module: r.module })
+  }
+  return r
+}
+
+phase('Port')
+const results = []
+let halted = ''
+const waves = small ? plan.waves.slice(0, 1) : plan.waves
+for (const [i, wave] of waves.entries()) {
+  if (wave.length === 0) continue
+  if (lowBudget()) { halted = `budget low before wave ${i + 1}`; break }
+  const canary = wave.length &gt; 6 ? wave.slice(0, 3) : []
+  const first = canary.length ? (await pipeline(canary, port, verify, fixLoop)).filter(Boolean) : []
+  if (redShare(first) &gt; BREAKER) { results.push(...first); halted = `canaries red in wave ${i + 1}`; break }
+  const done = first.concat((await pipeline(wave.slice(canary.length), port, verify, fixLoop)).filter(Boolean))
+  results.push(...done)
+  log(`Wave ${i + 1}: ${Math.round((1 - redShare(done)) * done.length)}/${done.length} green`)
+  if (redShare(done) &gt; BREAKER) { halted = `breaker tripped in wave ${i + 1}`; break }
+}
+
+phase('Integrate')
+const pkgs = [...new Set(results.map((r) =&gt; pkg(r.module)))]
+const summaries = (await parallel(pkgs.map((p) =&gt; () =&gt; agent(
+  `You are the sub-lead for the ${p} package. Results: ${JSON.stringify(results.filter((r) =&gt; pkg(r.module) === p))}.
+Re-run scripts/verify.sh for each module marked failed or blocked. Edit nothing.
+Reply in at most 5 lines: green count, red modules with a one-line cause each, traps worth recording.`,
+  { label: `sub-lead ${p}`, model: 'sonnet' })))).filter(Boolean)
+summaries.forEach((s) =&gt; log(s))
+await agent(
+  `You are the only writer of shared files. Regenerate ts/src/index.ts by running python scripts/gen_barrel.py.
+Append these traps to the Known traps section of MIGRATION.md, skipping duplicates: ${JSON.stringify([...new Set(results.flatMap((r) =&gt; r.traps ?? []))])}.
+Then run npm test inside ts/ and report its summary line.`,
+  { label: 'integrator', model: 'sonnet' })
+
+if (!small &amp;&amp; !halted) {
+  phase('Verify')
+  const e2e = await agent(
+    'Run python scripts/difftest.py "gray|threshold:128", then two more specs built from the step names in kestrel/pipeline/steps.py. Edit nothing. Exit code 1 means a mismatch; exit code 2 means ts/src/cli.ts is not ported yet, so count it as failing. ' +
+    'For each failing spec, bisect with shorter specs and name the first module whose output differs.',
+    { label: 'difftest gate', model: 'sonnet', schema: e2eSchema })
+  log(e2e ? `difftest: ${e2e.specs.length - e2e.failing.length}/${e2e.specs.length} specs match. Suspect: ${e2e.suspect || 'none'}` : 'difftest agent failed')
+}
+
+const green = results.filter((r) =&gt; r.status === 'passed' || r.status === 'skipped').length
+const next = halted ? `Halted: ${halted}. Fix the cause and rerun; green modules are skipped.`
+  : small ? 'Small run done. Review PLAN.md, add APPROVED at the top, then run /migrate --plan-approved.'
+    : 'Ready for your sign-off.'
+log(`${green}/${results.length} modules green. ${next}`)</code></pre></div>
+        </li>
+        <li><p>Start Claude Code. The planner asks for <code>opus</code> by name; every other agent names its own model.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
+        </li>
+        <li><p>Do the small run first. Watch <code>/workflows</code>: three strategy agents, a planner, the first wave (<code>errors</code> and <code>mathutil</code>), sub-lead summaries and the integrator.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/migrate --small</code></pre></div>
+        </li>
+        <li><p>Checkpoint one. Read the plan and the state of the repo. Edit <code>PLAN.md</code> if you disagree with it. When you are satisfied, add a first line that says <code>APPROVED</code> with your name.</p>
+          <div class="cmd"><pre><code>python scripts/status.py
+sed -n '1,60p' PLAN.md
+git add -A &amp;&amp; git commit -qm "lab 20: small run, plan approved"</code></pre></div>
+        </li>
+        <li><p>Run the rest. If the breaker or the budget guard halts it, read the log, fix the cause, and run the same command again; green modules are skipped.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/migrate --plan-approved</code></pre></div>
+        </li>
+        <li><p>Checkpoint two. Run the gate yourself before you sign off. <code>difftest.py</code> exits 0 when the bytes match, 1 on a mismatch, and 2 if <code>ts/src/cli.ts</code> is not ported yet.</p>
+          <div class="cmd"><pre><code>python scripts/status.py
+python scripts/difftest.py "gray|threshold:128"; echo "exit $?"
+git diff --stat fresh -- MIGRATION.md ts/src/index.ts</code></pre></div>
+        </li>
+        <li><p>Write the retrospective.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Write RETRO.md, one page, about the two /migrate runs. Cover:
+1. Which strategy the planner chose and whether it held up.
+2. Green modules, verify retries, and anything the breaker or budget guard did.
+3. Cost per green module (session cost so far: $____) against my Lab 19 number.
+4. Which traps were found, by which agents, and when they reached MIGRATION.md.
+5. What the difftest caught that unit tests did not.
+6. The three changes I would make before running this on 240 modules with 100 agents.
+Use python scripts/status.py and the workflow logs as evidence. Mark guesses as guesses.</code></pre></div>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 20: migrate, RETRO.md"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>The small run ends with two green modules, a <code>PLAN.md</code> and a message telling you to approve it. The full run ports the remaining 22 modules in six waves, sends a canary ahead of the 14-module wave, shows a handful of fix rounds on <code>sonnet</code>, and ends with sub-lead summaries, a regenerated barrel, appended traps and a difftest result. Most runs finish with all or nearly all modules green; a red module usually comes with a precise cause from its sub-lead. Your retrospective should compare a prediction you made with something you measured.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Make the script ready for 240. Add <code>isolation: 'worktree'</code> to the port and fix agents, add an integration step that merges each wave's worktree branches before the next wave starts, and move each package's pipeline under its sub-lead, as in Lesson 17. Rerun on a fresh reset and add the cost of the extra machinery to <code>RETRO.md</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>A hundred agents is a design, not a setting. Remove the hidden dependencies, make "done" mechanical, bound every loop, compress reports on the way up, and put humans at the few boundaries where their judgment is cheap and decisive. Then scale only as far as the cost curve keeps paying.</p></div>
+  <div class="teaser"><b>Course complete</b>You have gone from one agent in a loop to a hundred-agent design you can defend. The Reference section in the sidebar collects the commands, settings, workflow API, graph shapes and the decision guide in one place for when you build your own.</div>
+</section>

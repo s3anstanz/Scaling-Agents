@@ -1,0 +1,173 @@
+<section class="lesson" id="lesson-07" data-week="2" data-title="Orchestrator and worker models" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 07</span>
+    <span class="meta">Week 2 · Small teams</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="3-5">3–5 agents</span>
+  </div>
+  <h1>Orchestrator and worker models</h1>
+  <p class="lesson__deck">The lead plans, routes and judges. The workers execute narrow tasks behind a test gate. Those jobs reward different models, and Claude Code gives you four places to choose one. This lesson shows where each choice wins and where to spend your expensive model.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Two jobs that look alike</h2>
+  <p>In Lab 06 every agent ran on the same model. The lead and the three porters were the same kind of Claude doing different jobs. Look at what each one actually did.</p>
+  <p>The <b>orchestrator</b> (in our sessions, the lead) decided what to split, wrote the briefs, read the reports and decided whether the result was acceptable. Each of those is a judgement call, and a bad one is expensive. A bad split sends every worker in the wrong direction. A careless reading of a report lets a failing module through.</p>
+  <p>A <b>worker</b> did one narrow thing: port <code>flip.py</code> and its tests, then run <code>scripts/verify.sh</code> until it exits 0. The task was well specified, the context was small, and a script checked the result. If the worker made a mistake, the test caught it and the worker tried again. A worker's mistake costs a few more turns and stays inside one module.</p>
+  <p>That difference gives you a rule of thumb. Spend model quality where mistakes are expensive and hard to detect. Save it where mistakes are cheap and a check catches them. On Kestrel, that usually means a strong model for the lead and the reviewer, and a cheaper model for bulk porting.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 300" role="img" aria-label="An Opus lead sends work to three Haiku porters; their output goes to an Opus reviewer whose verdict returns to the lead">
+      <text class="g-cap" x="360" y="12" text-anchor="middle">cheap, many, narrow</text>
+      <text class="g-cap" x="80" y="98" text-anchor="middle">plans, judges</text>
+      <text class="g-cap" x="620" y="98" text-anchor="middle">checks the bar</text>
+      <g class="g-node g-node--orch"><rect x="20" y="110" width="120" height="50" rx="8"/><text x="80" y="140">Lead · opus</text></g>
+      <g class="g-node g-node--worker"><rect x="300" y="20" width="120" height="50" rx="8"/><text x="360" y="50">Porter · haiku</text></g>
+      <g class="g-node g-node--worker"><rect x="300" y="110" width="120" height="50" rx="8"/><text x="360" y="140">Porter · haiku</text></g>
+      <g class="g-node g-node--worker"><rect x="300" y="200" width="120" height="50" rx="8"/><text x="360" y="230">Porter · haiku</text></g>
+      <g class="g-node g-node--check"><rect x="560" y="110" width="120" height="50" rx="8"/><text x="620" y="140">Review · opus</text></g>
+      <path class="g-edge" d="M140 135 C 220 135, 220 45, 300 45"/>
+      <path class="g-edge" d="M140 135 L300 135"/>
+      <path class="g-edge" d="M140 135 C 220 135, 220 225, 300 225"/>
+      <path class="g-edge" d="M420 45 C 490 45, 490 135, 560 135"/>
+      <path class="g-edge" d="M420 135 L560 135"/>
+      <path class="g-edge" d="M420 225 C 490 225, 490 135, 560 135"/>
+      <path class="g-edge g-edge--loop" d="M620 160 L620 282 L80 282 L80 160"/>
+      <text class="g-cap" x="360" y="274" text-anchor="middle">verdict</text>
+    </svg>
+    <figcaption>Strong models at the two points of judgement, cheap models in the middle where <code>verify.sh</code> checks every result.</figcaption>
+  </figure>
+
+  <h2><span class="h2num">Part two</span>The four dials</h2>
+  <p>Claude Code lets you set a model in four places. They stack, and knowing the order saves a lot of confusion.</p>
+  <p><b>The main model.</b> This is the lead's model. Set it with <code>--model</code> when you start, <code>/model</code> during a session, or <code>"model"</code> in <code>settings.json</code>. The aliases are <code>opus</code> (Opus 5.5), <code>sonnet</code> (Sonnet 5.5), <code>haiku</code> (Haiku 5.5) and <code>fable</code> (Fable 5.1). There is also <code>opusplan</code>, which uses Opus while the session is planning and Sonnet while it executes. That is the orchestrator-worker idea applied inside one session.</p>
+  <p><b>The default worker model.</b> The environment variable <code>CLAUDE_CODE_SUBAGENT_MODEL</code> sets the model for subagents that do not say otherwise. <code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code> gives you an Opus lead with Haiku workers. Set <code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1</code> as well and every subagent uses that model, whatever else is configured.</p>
+  <p><b>The agent file.</b> A subagent defined in <code>.claude/agents/</code> can name its own model in its frontmatter, for example <code>model: sonnet</code>. The value <code>inherit</code> means "use the main model". You will write these files in Lesson 08.</p>
+  <p><b>The single call.</b> When the lead starts a subagent, the Agent tool call itself can carry a <code>model</code> parameter. If you say "use a sonnet subagent for this one", the lead can pass it on that call.</p>
+  <p>When more than one is set, the highest one in this list wins:</p>
+  <ol>
+    <li>the <code>model</code> parameter on that specific Agent tool call</li>
+    <li>the subagent's frontmatter <code>model</code></li>
+    <li><code>CLAUDE_CODE_SUBAGENT_MODEL</code></li>
+    <li>the main conversation's model</li>
+  </ol>
+  <p>The list runs from most specific to most general. A choice made for one call beats a choice made for one role, which beats a choice made for all workers, which beats the session default.</p>
+  <p><b>Effort</b> is a separate dial. It controls how much thinking the model does per step, with levels <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code> and <code>max</code>. Set it with <code>/effort</code>, <code>--effort</code>, or <code>effort</code> in an agent's frontmatter. A planner on high effort and a porter on medium effort is a reasonable starting point.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>.claude/settings.local.json (model lines only)</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre>{</pre></div></li>
+        <li><button class="cl" data-note="n1"><span class="ln">2</span><pre>  <span class="tk-key">"model"</span>: <span class="tk-str">"opus"</span>,</pre></button></li>
+        <li><button class="cl" data-note="n2"><span class="ln">3</span><pre>  <span class="tk-key">"env"</span>: {</pre></button></li>
+        <li><button class="cl" data-note="n3"><span class="ln">4</span><pre>    <span class="tk-key">"CLAUDE_CODE_SUBAGENT_MODEL"</span>: <span class="tk-str">"haiku"</span></pre></button></li>
+        <li><div class="cl"><span class="ln">5</span><pre>  },</pre></div></li>
+        <li><button class="cl" data-note="n4"><span class="ln">6</span><pre>  <span class="tk-key">"hooks"</span>: { <span class="tk-com">... your Stop hook from Lesson 04 ...</span> }</pre></button></li>
+        <li><div class="cl"><span class="ln">7</span><pre>}</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line. This is the settings-file version of the lab's command line; use one or the other.</p></div>
+        <div class="cnote" data-note="n1"><div class="label">Line 2 · main model</div><p>The lead's model, same as <code>--model opus</code>. A command-line flag or <code>/model</code> during the session still changes it for that session.</p></div>
+        <div class="cnote" data-note="n2"><div class="label">Line 3 · env</div><p>The <code>env</code> block sets environment variables for every session in this project, so you do not have to type them before <code>claude</code>.</p></div>
+        <div class="cnote" data-note="n3"><div class="label">Line 4 · default worker</div><p>Precedence level 3. Any subagent without a frontmatter <code>model</code> and without a per-call <code>model</code> runs on Haiku.</p></div>
+        <div class="cnote" data-note="n4"><div class="label">Line 6 · keep the gate</div><p>Your Stop hook lives in this same file. Add the model lines next to it and leave the hook alone; cheap workers make the gate even more important.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>You start <code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code>. Your repo has a reviewer agent file with <code>model: opus</code> in its frontmatter. You type: "Use the reviewer agent on ops/flip.py, but run it on sonnet this time." The lead passes <code>model: sonnet</code> on that Agent call. Which model reviews <code>flip</code>? And which model would a plain "use a subagent to port ops/grayscale.py" run on?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>The reviewer runs on Sonnet, because the per-call parameter sits above frontmatter. The plain porting subagent runs on Haiku: it has no frontmatter model and no per-call model, so the environment variable applies. The Opus main model only matters for a subagent when nothing above it is set. If you had also set <code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1</code>, both would run on Haiku.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Where to spend the expensive model</h2>
+  <p>The useful unit is <b>cost per verified module</b>. A cheap worker that passes on the third try may still cost less than an expensive worker that passes on the first. Or it may not, if its failures are long and wander. You only find out by measuring, which is the lab.</p>
+  <p>Here is the arithmetic with illustrative numbers, invented for the example. Say a Haiku port attempt costs $0.08 and passes <code>verify.sh</code> on the first try 60% of the time. A Sonnet attempt costs $0.30 and passes first try 90% of the time. If each failure costs roughly one more attempt, Haiku averages about $0.13 per verified module and Sonnet about $0.33. Haiku wins on price. Now suppose half of Haiku's failures are the T1 rounding trap and it "fixes" the test instead of the code. The test gate catches that only if the expected values stay untouched. Your reviewer is what protects the gate, which is why the reviewer is the last place to save money.</p>
+  <p>The same logic applies upward. The lead sees every report and decides what ships. A lead on a weak model reads "VERIFY: pass" and moves on without noticing that the report lists two test files where there should be one. Lead and reviewer are the leverage points: few calls, high consequence.</p>
+
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Role</th><th>Model</th><th>Effort</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Lead (orchestrator)</td><td><code>opus</code></td><td>high</td><td>Splits the work and accepts the results. One bad decision is copied into every worker.</td></tr>
+      <tr><td>Planner</td><td><code>inherit</code> (the lead's model)</td><td>high</td><td>A plan is leverage. It is read once and followed many times.</td></tr>
+      <tr><td>Porter (bulk worker)</td><td><code>haiku</code> or <code>sonnet</code></td><td>medium</td><td>Narrow task, small context, <code>verify.sh</code> checks every result. Pick by cost per verified module.</td></tr>
+      <tr><td>Reviewer</td><td><code>opus</code>, or at least a different model from the porter</td><td>high</td><td>Independent judgement. It catches what the tests cannot, such as a test that was quietly changed.</td></tr>
+      <tr><td>Mechanical helper</td><td><code>haiku</code></td><td>low</td><td>Running <code>status.py</code>, collecting reports, formatting a table. No judgement involved.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">A starting assignment for Kestrel. Your lab data may move the porter row.</p>
+
+  <div class="c-note"><p><b>Same ideas in code.</b> The Agent SDK exposes the same choice: <code>AgentDefinition(description=..., prompt=..., tools=[...], model="sonnet")</code> for each worker and <code>model</code> in the options for the main agent. The labs stay in the CLI.</p></div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Your lead runs on Opus. The budget allows Opus in exactly one more role for the next wave of ops. Porters already run on Haiku behind <code>verify.sh</code>. Where does that extra Opus role buy the most?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">One of the porters, the one assigned the hardest module</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">The helper that runs <code>status.py</code> and formats the results table</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">The reviewer that checks each port before it is accepted</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">All porters, with the reviewer dropped to save money</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Defensible, not best</div><p>It might save a few retries on one module. But that porter is already behind a test gate, so its mistakes get caught. Opus there reduces cost of errors that were already contained.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>That job has no judgement in it. Running a script and formatting a table is exactly where the cheapest model belongs.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>The reviewer is the one place where a mistake is both expensive and invisible: a pass on a bad port. A strong, different model reviewing with a fresh context is what makes cheap porters safe to use.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>This spends the most and removes the independent check. Better porters still miss things the tests do not cover, and nobody would be looking.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-07">
+    <div class="lab__head">
+      <span class="label">Lab 07 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $0.80–$2.50 for both runs</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port the same three ops twice, once with Haiku workers and once with Sonnet workers under an Opus lead, and compare first-try pass rate and cost.</p>
+      <ol class="lab__steps">
+        <li><p>Save a copy of the barrel file so you can reset between runs.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+cp ts/src/index.ts notes/index.ts.before-l07</code></pre></div>
+        </li>
+        <li><p>Start an Opus lead with Haiku as the default worker model.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
+        </li>
+        <li><p>Type this prompt. The last line keeps the lead from overriding the worker model on the call.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Use three subagents in parallel to port kestrel/ops/grayscale.py, kestrel/ops/threshold.py and kestrel/ops/brightness.py, with their tests, to ts/src/ops/ and ts/test/ops/, following MIGRATION.md.
+
+Each subagent runs scripts/verify.sh on its module until it exits 0 and replies in at most 5 lines:
+MODULE, VERIFY (pass or fail), RUNS (verify.sh runs; 1 means it passed first try), TRAPS (any trap hit), FILES.
+
+Do not pass a model parameter on the subagent calls. When all three report, show a table of MODULE, VERIFY and RUNS, then run python scripts/status.py.</code></pre></div>
+        </li>
+        <li><p>Check the cost, write it down along with the RUNS column, then exit.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+        <li><p>Reset the three modules so the second run starts from the same place.</p>
+          <div class="cmd"><pre><code>rm ts/src/ops/grayscale.ts ts/src/ops/threshold.ts ts/src/ops/brightness.ts
+rm ts/test/ops/grayscale.test.ts ts/test/ops/threshold.test.ts ts/test/ops/brightness.test.ts
+cp notes/index.ts.before-l07 ts/src/index.ts
+python scripts/status.py</code></pre></div>
+        </li>
+        <li><p>Start again with Sonnet workers, run the same prompt from step 3, then <code>/usage</code>.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet claude --model opus</code></pre></div>
+        </li>
+        <li><p>Add both runs to <code>notes/baseline.md</code>, and add a column for first-try passes (how many modules had RUNS = 1). Keep the Sonnet run's files; you will build on them.</p></li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Both runs end with the three ops ported and passing, because the Stop hook will not let the lead finish otherwise. The difference shows in RUNS and in cost. Haiku workers often need more <code>verify.sh</code> runs and cost less per attempt; Sonnet workers more often pass on the first run. Divide each run's total by 3 to get cost per verified module. Your own numbers decide the porter row in the table. If a cheap worker changed an expected value in a test to make it pass, you have found the reason for Lesson 08's reviewer.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Repeat the Haiku run with <code>--effort high</code> on the lead and compare. Then try <code>claude --model opusplan</code> with no subagents at all on one op, and see whether planning on Opus and executing on Sonnet in a single session beats a team for a task this small.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Put strong models where judgement is concentrated and mistakes are hard to see: the lead and the reviewer. Put cheap models behind a test gate, and choose them by cost per verified module.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 08 · Defining subagent roles. You turn planner, porter and reviewer into files with their own prompts, tools and models.</div>
+</section>

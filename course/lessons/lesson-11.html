@@ -1,0 +1,171 @@
+<section class="lesson" id="lesson-11" data-week="3" data-title="Work as a dependency graph" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 11</span>
+    <span class="meta">Week 3 · Systems</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="10-25">10–25 agents</span>
+  </div>
+  <h1>Work as a dependency graph</h1>
+  <p class="lesson__deck">Before you add agents, you need to know which pieces of work can happen at the same time. For a migration, the answer is already written down in the import statements. This lesson turns those imports into a plan that ten or more agents can follow.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Why coding resists parallel agents</h2>
+  <p>In Week 2 you ran three to five agents at once. It went well because you picked the modules. <code>ops/invert.py</code>, <code>ops/flip.py</code> and <code>ops/crop.py</code> all depend on <code>core/image.py</code>, which was already ported, and on nothing else. They had no reason to wait for each other.</p>
+  <p>That luck does not hold for a whole codebase. Anthropic's post on its multi-agent research system reports that a lead agent with parallel subagents beat a single agent by 90.2% on their internal research eval. The same post warns that multi-agent setups fit poorly when agents need shared context or have many dependencies between them, and it says plainly that this includes most coding tasks.</p>
+  <p>The reason is easy to see on Kestrel. Ask an agent to port <code>core/image.py</code> before <code>core/color.ts</code> exists and it has two bad options. It can invent the TypeScript API of <code>color</code> (it will guess wrong, and the real port will disagree later), or it can stall. Either way, adding agents made things worse.</p>
+  <p>The way out is to stop treating "the codebase" as one blob. Make every dependency explicit, and parallel work becomes a scheduling question you can answer with a script. That is what this week is about. Lesson 11 finds the graph. Lesson 12 adds contracts so agents share context through files instead of conversation. Lesson 14 adds isolation so they stop writing over each other. Those three fixes line up with the three things the research post said coding was missing.</p>
+
+  <h2><span class="h2num">Part two</span>Four words: DAG, wave, width, critical path</h2>
+  <p>A <b>DAG</b> is a directed acyclic graph. Each module is a node. Draw an arrow from A to B when B imports A, which means A must be ported first. "Acyclic" means you can never follow arrows and end up where you started. A cycle would be a real problem: two modules that each need the other first. Kestrel has none, and <code>python scripts/deps.py</code> prints its graph as an adjacency list.</p>
+  <p>A <b>topological order</b> is any ordering of the modules where every module comes after everything it imports. One agent porting one module at a time just needs any topological order. Week 1 followed one without naming it.</p>
+  <p>A <b>wave</b> (also called a layer) groups modules by how deep their dependencies go. Wave L0 holds modules that import nothing. A module sits in wave L<i>n</i> when its deepest dependency sits in L<i>n</i>−1. Every module in a wave can be ported at the same time, as soon as the previous waves are done. <code>python scripts/deps.py --layers</code> prints Kestrel's seven waves.</p>
+  <p>The <b>width</b> of a wave is how many modules it holds. Width is the most agents that wave can keep busy. Kestrel's widest wave is L3 with 14 modules: the twelve <code>ops/*</code> modules plus <code>io/ppm</code> and <code>io/pgm</code>.</p>
+  <p>The <b>critical path</b> is the longest chain of dependencies. For Kestrel it is <code>mathutil → color → image → (any op) → steps → runner → cli</code>, seven modules long. <code>python scripts/deps.py --critical</code> prints it. However many agents you run, the port cannot finish faster than the time it takes to do those seven modules one after another.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 500" role="img" aria-label="Kestrel's 24 modules in seven dependency waves, from errors and mathutil at the top to cli at the bottom, with the critical path drawn solid">
+      <text class="g-cap" x="20" y="45" text-anchor="start">L0</text>
+      <text class="g-cap" x="20" y="115" text-anchor="start">L1</text>
+      <text class="g-cap" x="20" y="185" text-anchor="start">L2</text>
+      <text class="g-cap" x="20" y="255" text-anchor="start">L3</text>
+      <text class="g-cap" x="20" y="325" text-anchor="start">L4</text>
+      <text class="g-cap" x="20" y="395" text-anchor="start">L5</text>
+      <text class="g-cap" x="20" y="465" text-anchor="start">L6</text>
+
+      <g class="g-node g-node--worker" data-node="errors"><rect x="200" y="20" width="120" height="40" rx="8"/><text x="260" y="45">errors</text></g>
+      <g class="g-node g-node--worker" data-node="mathutil"><rect x="400" y="20" width="120" height="40" rx="8"/><text x="460" y="45">mathutil</text></g>
+      <g class="g-node g-node--worker" data-node="geometry"><rect x="200" y="90" width="120" height="40" rx="8"/><text x="260" y="115">geometry</text></g>
+      <g class="g-node g-node--worker" data-node="color"><rect x="400" y="90" width="120" height="40" rx="8"/><text x="460" y="115">color</text></g>
+      <g class="g-node g-node--worker" data-node="image"><rect x="300" y="160" width="120" height="40" rx="8"/><text x="360" y="185">image</text></g>
+      <g class="g-node g-node--worker" data-node="l3"><rect x="110" y="230" width="500" height="40" rx="8"/><text x="360" y="255">12 ops + io/ppm + io/pgm (14 modules)</text></g>
+      <g class="g-node g-node--worker" data-node="stats"><rect x="110" y="300" width="120" height="40" rx="8"/><text x="170" y="325">stats</text></g>
+      <g class="g-node g-node--worker" data-node="steps"><rect x="300" y="300" width="120" height="40" rx="8"/><text x="360" y="325">steps</text></g>
+      <g class="g-node g-node--worker" data-node="edges"><rect x="490" y="300" width="120" height="40" rx="8"/><text x="550" y="325">edges</text></g>
+      <g class="g-node g-node--worker" data-node="runner"><rect x="300" y="370" width="120" height="40" rx="8"/><text x="360" y="395">runner</text></g>
+      <g class="g-node g-node--worker" data-node="cli"><rect x="300" y="440" width="120" height="40" rx="8"/><text x="360" y="465">cli</text></g>
+
+      <path class="g-edge g-edge--faint" d="M260 60 L260 90"/>
+      <path class="g-edge g-edge--faint" d="M430 60 L290 90"/>
+      <path class="g-edge" d="M460 60 L460 90"/>
+      <path class="g-edge g-edge--faint" d="M260 130 L340 160"/>
+      <path class="g-edge" d="M460 130 L380 160"/>
+      <path class="g-edge" d="M360 200 L360 230"/>
+      <path class="g-edge g-edge--faint" d="M170 270 L170 300"/>
+      <path class="g-edge" d="M360 270 L360 300"/>
+      <path class="g-edge g-edge--faint" d="M550 270 L550 300"/>
+      <path class="g-edge" d="M360 340 L360 370"/>
+      <path class="g-edge" d="M360 410 L360 440"/>
+
+      <text class="g-cap" x="630" y="45" text-anchor="start">width 2</text>
+      <text class="g-cap" x="630" y="115" text-anchor="start">width 2</text>
+      <text class="g-cap" x="630" y="185" text-anchor="start">width 1</text>
+      <text class="g-cap" x="630" y="255" text-anchor="start">width 14</text>
+      <text class="g-cap" x="630" y="325" text-anchor="start">width 3</text>
+      <text class="g-cap" x="630" y="395" text-anchor="start">width 1</text>
+      <text class="g-cap" x="630" y="465" text-anchor="start">width 1</text>
+    </svg>
+    <figcaption>Kestrel's 24 modules in seven waves. Solid arrows trace the critical path (mathutil → color → image → an op → steps → runner → cli). Faint arrows are other dependencies; a few long ones (errors → image, mathutil → edges, io → cli) are left out to keep the drawing readable. Run <code>python scripts/deps.py --dot</code> for the complete graph.</figcaption>
+  </figure>
+
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Wave</th><th>Modules</th><th>Width</th><th>Waits for</th></tr></thead>
+      <tbody>
+        <tr><td>L0</td><td><code>core/errors</code>, <code>core/mathutil</code></td><td>2</td><td>nothing</td></tr>
+        <tr><td>L1</td><td><code>core/color</code>, <code>core/geometry</code></td><td>2</td><td>mathutil (and errors for geometry)</td></tr>
+        <tr><td>L2</td><td><code>core/image</code></td><td>1</td><td>color, geometry, errors</td></tr>
+        <tr><td>L3</td><td>crop, flip, rotate, resize, grayscale, threshold, invert, brightness, contrast, blur, histogram, pad, <code>io/ppm</code>, <code>io/pgm</code></td><td>14</td><td>image (some also color, mathutil, geometry, errors)</td></tr>
+        <tr><td>L4</td><td><code>analysis/stats</code>, <code>analysis/edges</code>, <code>pipeline/steps</code></td><td>3</td><td>histogram; grayscale and mathutil; all twelve ops</td></tr>
+        <tr><td>L5</td><td><code>pipeline/runner</code></td><td>1</td><td>steps, errors</td></tr>
+        <tr><td>L6</td><td><code>cli</code></td><td>1</td><td>runner, io/ppm, io/pgm</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Seven waves, 24 modules. Look at the L4 row: the three modules in one wave wait for very different things.</p>
+
+  <h2><span class="h2num">Part three</span>The arithmetic of waves</h2>
+  <p>Once you have waves, you can reason about time and agent count without running anything. Use a toy number to see the shape. These numbers are illustrative. Say every module takes one agent 10 minutes, including its verify loop.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>One agent porting all 24 modules in order takes 240 minutes (illustrative). You now have as many agents as you want, and you wait for each wave to finish before starting the next. How long does the port take? And how long with exactly 4 agents?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>With unlimited agents, each wave takes one module's time, so 7 waves × 10 minutes = 70 minutes. That is a 3.4x speedup, and it is the ceiling: agent number 15 has nothing to do, because no wave is wider than 14.</p>
+        <p>With 4 agents, every wave except L3 still takes one round. L3 has 14 modules, so it needs four rounds (4 + 4 + 4 + 2). That is 6 + 4 = 10 rounds, or 100 minutes. Going from 4 agents to 14 saves 30 minutes, and all of the saving comes from one wave.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <p>Real modules are not all 10 minutes. A wave lasts as long as its slowest module. If <code>ops/blur.py</code> takes three times as long because of the T1 rounding trap, all of L3 waits for it. This is the cost of a wave <b>barrier</b>: a point where everyone stops until the last worker arrives.</p>
+  <p>There is a second, less visible cost. Every extra agent adds coordination: a handoff message to write, a report for the orchestrator to read, another set of edits that might collide with someone else's. At 4 agents that tax is small. At 14 it starts to matter, and Lessons 12 and 14 are about keeping it down. Past the width of the widest wave, extra agents add only tax.</p>
+
+  <h2><span class="h2num">Part four</span>Plan in waves, run from a ready queue</h2>
+  <p>Waves are a simplification. A wave barrier says "start nothing in L4 until every L3 module passes". Look at <code>analysis/edges</code>. It needs <code>ops/grayscale</code> and <code>core/mathutil</code>, nothing else. Once grayscale passes, edges can start, even while blur is still fighting its rounding trap.</p>
+  <p>A <b>ready queue</b> is the list of modules whose dependencies are all done. <code>python scripts/status.py --next</code> prints it. A scheduler that pulls work from the ready queue never waits for an unrelated slow module. Notice what it cannot do: <code>pipeline/steps</code> imports all twelve ops, so it still waits for the slowest one. The critical path stays seven modules long.</p>
+  <p>So use both. Plan in waves, because a wave plan is easy to read, review and budget. Execute from the ready queue, because it wastes less time. The plan tells a human what will happen. The ready queue tells the orchestrator what to do next.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>You already run 14 porters in parallel and the port still feels slow. Which change shortens total wall-clock time the most?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Add 10 more porters.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">Put your best model and your earliest attention on the modules that lie on the critical path.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Port <code>cli.py</code> first, so you have an end-to-end test from day one.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Split every op into one task per function, so each wave has more pieces.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The widest wave has 14 modules. Porters 15 to 24 would sit idle and still cost you coordination. Width caps useful parallelism.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>The project cannot finish faster than mathutil → color → image → op → steps → runner → cli done in sequence. Any minute saved on a module on that chain comes off the total. A minute saved on, say, <code>analysis/stats</code> comes off nothing, because stats was never what everyone waited for.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p><code>cli</code> imports runner, which imports steps, which imports every op. A porter starting there has to stub or guess all of them, and the guesses become contract drift you will chase in Lesson 15.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Smaller tasks mean more handoffs and more agents editing the same file. It can help when one huge module dominates a wave, which is not Kestrel's situation. Here it mostly adds merge work.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>The plan is a file</h2>
+  <p>At three agents, the orchestrator can keep the plan in its head, which means in its context window. At fifteen, that plan competes with fifteen reports for space, and Lesson 3 showed what happens to an agent whose context fills up. So write the plan down. <code>PLAN.md</code> becomes the orchestrator's memory, and you can read it too.</p>
+  <p>A useful <code>PLAN.md</code> for Kestrel has one section per wave and one line per module with five things: its status (done, ready, or blocked and by what), its owner (one porter per module), its gate (<code>scripts/verify.sh kestrel/&lt;path&gt;.py</code>), a turn or budget cap, and any known trap that applies (T2 for <code>resize</code> and <code>rotate</code>, T3 for <code>pad</code>). The plan should also say which modules are on the critical path, so you know where delays hurt.</p>
+  <p>Two rules keep the plan honest. First, derive it. The waves come from <code>deps.py</code> and the status comes from <code>status.py</code>, so regenerate those parts rather than editing them by hand. Second, the plan describes intent and the repo describes reality. When they disagree, the repo wins. Lesson 12 makes that rule precise.</p>
+  <div class="c-note"><p><b>Where you are.</b> After Weeks 1 and 2 your <code>status.py</code> table shows waves L0 to L3 done (all twelve ops plus both <code>io</code> modules) and <code>analysis/stats</code> done. What remains is <code>analysis/edges</code>, unless you took the Week 2 stretch, and the pipeline chain: <code>steps</code>, <code>runner</code>, <code>cli</code>. This lab writes the plan for the whole graph and finishes the analysis package. Lesson 13 ports the pipeline chain with a team.</p></div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-11">
+    <div class="lab__head">
+      <span class="label">Lab 11 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $0.50–$2.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Turn Kestrel's imports into a written wave plan, check it against the ready queue, and let the orchestrator work the queue for the analysis package.</p>
+      <ol class="lab__steps">
+        <li><p>Look at the graph yourself first. Read the critical path and the L3 width off the output.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+python scripts/deps.py --layers
+python scripts/deps.py --critical
+python scripts/status.py
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Start an Opus orchestrator. Subagents without a <code>model</code> in their frontmatter default to Sonnet; your <code>porter.md</code> keeps whatever model you gave it in Lesson 8.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=sonnet claude --model opus</code></pre></div>
+        </li>
+        <li><p>Have the planner draft the plan. Your planner is read-only, so the main session writes the file.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Use the planner agent to read the output of `python scripts/deps.py --layers`, `python scripts/deps.py --critical` and `python scripts/status.py`, and draft a migration plan. Then write it to PLAN.md yourself. Include one section per wave, L0 to L6. For every module give: status (done / ready / blocked by what), owner (one porter per module), gate (scripts/verify.sh kestrel/&lt;path&gt;.py), a cap of 25 turns, and any Known trap from MIGRATION.md that applies. End with the critical path and the width of each wave.</code></pre></div>
+        </li>
+        <li><p>Read <code>PLAN.md</code> and compare it with <code>--next</code>. Both <code>analysis/edges</code> and <code>pipeline/steps</code> should be ready, the two remaining members of wave L4, while <code>runner</code> and <code>cli</code> are blocked. Then let the orchestrator work the queue for the analysis package.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Work from PLAN.md. Run `python scripts/status.py --next`. For every listed module under kestrel/analysis/, start one porter subagent; if there are several, run them in parallel. Do not start kestrel/pipeline/ or kestrel/cli.py; a later lesson ports those. When a porter reports, run scripts/verify.sh yourself on its module and treat its report as a claim. Record any trap it reports in MIGRATION.md yourself. Update the status column in PLAN.md and run --next again. Finally tell me which modules are ready now, why pipeline/steps.py only became ready after the last op passed, and how long the remaining critical path is in modules.</code></pre></div>
+        </li>
+        <li><p>Record the run. Check <code>/usage</code>, then add a row to <code>notes/baseline.md</code>: modules ported, number of parallel porters at peak, wall-clock, cost.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p><code>PLAN.md</code> with L0 to L3 marked done, <code>edges</code> and <code>steps</code> ready, and <code>runner</code> and <code>cli</code> blocked. One porter ports <code>analysis/edges</code> (it needs only grayscale and mathutil), and the orchestrator's own verify run confirms it. At the end, <code>python scripts/status.py</code> shows 21 of 24 modules ported and passing, with only <code>pipeline/steps</code>, <code>pipeline/runner</code> and <code>cli</code> left: a chain of three, which is the rest of the critical path. If you already ported edges in Week 2, the queue holds nothing for this step, and the plan is the whole result.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Use your per-module times from <code>notes/baseline.md</code> to estimate the critical-path time for the full 24-module port, and compare it with the sum of all module times. The ratio is your real speedup ceiling for Kestrel-24. Label it an estimate.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Parallel agents need a dependency graph before they need anything else. The width of the widest wave caps how many agents help, and the critical path caps how fast you can go, so write both into the plan and spend your effort on the path.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 12 · Handoffs, contracts and shared state. Agent reports in a fixed shape, and a source of truth that does not depend on any report.</div>
+</section>

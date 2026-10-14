@@ -1,0 +1,129 @@
+<section class="lesson ref view" id="reference" data-view>
+  <div class="lesson__eyebrow"><span class="chip">Reference</span><span class="meta">Checked against the Claude Code docs, October 2026</span></div>
+  <h1>Reference sheet</h1>
+  <p class="lesson__deck">The settings, flags and patterns from the course in one place. Claude Code changes quickly, so when something here disagrees with <a href="https://code.claude.com/docs/en/" target="_blank" rel="noopener">the docs</a>, trust the docs.</p>
+  <hr class="rule-sep">
+
+  <h2>How many agents?</h2>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Scale</th><th>Reach for it when</th><th>Main risk</th><th>Claude Code mechanism</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td>The work is sequential or tightly coupled, fits in one context, and has a checkable finish line.</td><td>Stopping early, or looping without progress.</td><td>One session, a Stop hook gate, <code>--max-turns</code>, <code>--max-budget-usd</code></td></tr>
+      <tr><td class="mono">3–5</td><td>A few independent pieces, a need for a fresh-eyed reviewer, or context that would overflow one agent.</td><td>Lossy handoffs; paying several times the tokens for little speedup.</td><td>Subagents in <code>.claude/agents/</code>, <code>CLAUDE_CODE_SUBAGENT_MODEL</code></td></tr>
+      <tr><td class="mono">10–25</td><td>A dependency graph with wide waves, explicit contracts between pieces, and a status source derived from the repo.</td><td>Agents overwriting each other; drift between modules that unit tests miss.</td><td>Worktree isolation, <code>--json-schema</code> results, agent teams (experimental)</td></tr>
+      <tr><td class="mono">100</td><td>Hundreds of similar, verifiable units, a deterministic plan, and money for the token bill.</td><td>Runaway cost, cascading failures, a coordinator drowning in reports.</td><td>Workflows, sub-lead hierarchy, retries, circuit breakers, budgets</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Which graph shape?</h2>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Shape</th><th>Use it when</th><th>Kestrel example</th></tr></thead>
+    <tbody>
+      <tr><td>Chain</td><td>Each step needs the previous step's output.</td><td>Plan → port <code>core/mathutil</code> → port <code>core/color</code></td></tr>
+      <tr><td>Diamond</td><td>The approach is known and the work splits into independent parts.</td><td>One planner, a porter per op in wave L3, one merger</td></tr>
+      <tr><td>Double diamond</td><td>You are unsure how to approach the work, and the work you settle on can run in parallel.</td><td>Three strategies proposed → one plan chosen → parallel porting → integrate and verify</td></tr>
+      <tr><td>Tree</td><td>One coordinator can't read every report (more than about 5 to 10).</td><td>Lead → package sub-leads → module porters</td></tr>
+      <tr><td>Dependency graph (DAG)</td><td>Pieces depend on other pieces; run in waves.</td><td><code>python scripts/deps.py --layers</code>: 7 waves</td></tr>
+      <tr><td>Cycle</td><td>Quality needs iteration against a checkable bar, with a round limit.</td><td>Porter ↔ reviewer, at most 3 rounds</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Choosing models</h2>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>What</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Main (orchestrator) model</td><td><code>claude --model opus</code>, <code>/model</code>, or <code>"model"</code> in <code>settings.json</code></td></tr>
+      <tr><td>Default worker model</td><td><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku</code> (or <code>sonnet</code>); add <code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1</code> to apply it to every subagent</td></tr>
+      <tr><td>Which model a subagent gets</td><td>Highest wins: (1) <code>model</code> on that one Agent call, (2) the agent file's <code>model</code>, (3) <code>CLAUDE_CODE_SUBAGENT_MODEL</code>, (4) the main model</td></tr>
+      <tr><td>Aliases</td><td><code>opus</code>, <code>sonnet</code>, <code>haiku</code>, <code>fable</code>, <code>opusplan</code> (Opus to plan, Sonnet to execute), <code>inherit</code> in agent files</td></tr>
+      <tr><td>Effort</td><td><code>low</code> · <code>medium</code> · <code>high</code> · <code>xhigh</code> · <code>max</code> via <code>/effort</code>, <code>--effort</code>, or <code>effort</code> in an agent file</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Subagent file</h2>
+  <div class="cmd wide" data-file=".claude/agents/reviewer.md"><pre><code>---
+name: reviewer
+description: Reviews a ported Kestrel module against its Python original. Use after every port.
+tools: Read, Grep, Glob, Bash
+model: opus
+effort: high
+maxTurns: 25
+---
+You review one ported module. Read the Python source, the TypeScript port and both
+test files. Run scripts/verify.sh on the module. Never edit files. Report PASS or
+FAIL with the exact failing cases and any trap from MIGRATION.md the port missed.</code></pre></div>
+  <p>Other fields: <code>disallowedTools</code>, <code>permissionMode</code>, <code>skills</code>, <code>mcpServers</code>, <code>hooks</code>, <code>memory</code>, <code>background</code>, <code>isolation: worktree</code>, <code>color</code>, <code>initialPrompt</code>. Subagents start with a fresh context, load <code>CLAUDE.md</code>, and send back only their final report. They can nest 3 layers deep and 20 can run at once by default.</p>
+
+  <h2>Headless runs</h2>
+  <div class="cmd wide"><pre><code>claude -p "Port kestrel/ops/crop.py. Done means scripts/verify.sh kestrel/ops/crop.py exits 0." \
+  --model sonnet \
+  --max-turns 25 \
+  --max-budget-usd 1 \
+  --permission-mode acceptEdits \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"module":{"type":"string"},"passed":{"type":"boolean"}},"required":["module","passed"]}'</code></pre></div>
+  <p>The JSON result includes <code>total_cost_usd</code>, <code>num_turns</code> and <code>structured_output</code>. <code>--bare</code> skips <code>CLAUDE.md</code>, hooks, plugins, MCP servers and subagent discovery. Running several at once is ordinary shell (<code>&amp;</code> and <code>wait</code>, or <code>xargs -P</code>).</p>
+
+  <h2>Stop hook: make "done" mechanical</h2>
+  <div class="cmd wide" data-file=".claude/settings.local.json"><pre><code>{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "python scripts/stop_gate.py" } ] }
+    ]
+  }
+}</code></pre></div>
+  <p>The hook reads JSON on stdin. Exit code 2 (the reason goes to stderr), or printing <code>{"decision":"block","reason":"..."}</code>, sends Claude back to work. Check <code>stop_hook_active</code> so you don't block forever; Claude Code also stops after 8 back-to-back continuations (<code>CLAUDE_CODE_STOP_HOOK_BLOCK_CAP</code>). <code>SubagentStop</code> does the same for subagents.</p>
+
+  <h2>Workflows</h2>
+  <div class="cmd wide" data-file=".claude/workflows/port-wave.js"><pre><code>export const meta = {
+  name: 'port-wave',
+  description: 'Port every module in one dependency wave, then verify each',
+  phases: [{ title: 'Port' }, { title: 'Verify' }],
+}
+const RESULT = {
+  type: 'object',
+  properties: { module: { type: 'string' }, passed: { type: 'boolean' }, notes: { type: 'string' } },
+  required: ['module', 'passed'],
+}
+const results = await pipeline(
+  args.modules,
+  m => agent(`Port ${m} following MIGRATION.md. Stop when scripts/verify.sh ${m} exits 0.`,
+             { label: `port ${m}`, phase: 'Port', model: 'haiku' }),
+  (_, m) => agent(`Run scripts/verify.sh ${m} and report the result.`,
+             { label: `verify ${m}`, phase: 'Verify', schema: RESULT }),
+)
+const ok = results.filter(Boolean).filter(r => r.passed)
+log(`${ok.length}/${args.modules.length} modules passed`)
+return results</code></pre></div>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Item</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Start one</td><td>Ask in plain words ("use a workflow to…"), include <code>ultracode</code> in the prompt, or run a saved one as <code>/&lt;name&gt;</code></td></tr>
+      <tr><td>Where saved</td><td><code>.claude/workflows/</code> (project) or <code>~/.claude/workflows/</code></td></tr>
+      <tr><td>Watch and control</td><td><code>/workflows</code>: <code>p</code> pause, <code>x</code> stop, <code>s</code> save</td></tr>
+      <tr><td>Script API</td><td><code>agent()</code>, <code>parallel()</code> (waits for all), <code>pipeline()</code> (no waiting between stages), <code>phase()</code>, <code>log()</code>, <code>args</code>, <code>budget</code>, <code>workflow()</code></td></tr>
+      <tr><td>Limits</td><td>16 agents at once by default (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, up to 256) · 1,000 agents per run · 4,096 items per call</td></tr>
+      <tr><td>Size guideline</td><td><code>workflowSizeGuideline</code>: small (&lt;5), medium (&lt;10, default), large (&lt;50), unrestricted. A warning appears above 25 agents or about 1.5M projected tokens.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Isolation and teams</h2>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Feature</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Worktree for a session</td><td><code>claude --worktree &lt;name&gt;</code> (or <code>-w</code>) creates <code>.claude/worktrees/&lt;name&gt;/</code> on branch <code>worktree-&lt;name&gt;</code></td></tr>
+      <tr><td>Worktree per subagent</td><td><code>isolation: worktree</code> in the agent file, or <code>{ isolation: 'worktree' }</code> in a workflow <code>agent()</code> call</td></tr>
+      <tr><td>Copy ignored files in</td><td><code>.worktreeinclude</code> (for example <code>ts/node_modules</code>)</td></tr>
+      <tr><td>Agent teams (experimental)</td><td><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code>. Teammates message each other and share a task list. One team per session, no nesting, not available in <code>-p</code>. Start with 3 to 5.</td></tr>
+      <tr><td>Repeat on a timer</td><td><code>/loop 5m &lt;prompt&gt;</code>, or <code>/loop &lt;prompt&gt;</code> to let Claude pace itself</td></tr>
+      <tr><td>Cost so far</td><td><code>/usage</code> (alias <code>/cost</code>)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Further reading</h2>
+  <ul>
+    <li><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Building effective agents</a>: the five workflow patterns (prompt chaining, routing, parallelization, orchestrator-workers, evaluator-optimizer), and why to start simple.</li>
+    <li><a href="https://www.anthropic.com/engineering/multi-agent-research-system" target="_blank" rel="noopener">How we built our multi-agent research system</a>: a lead agent with parallel subagents beat a single agent by 90.2% on Anthropic's research eval and used about 15 times the tokens of a chat.</li>
+    <li><a href="https://code.claude.com/docs/en/sub-agents" target="_blank" rel="noopener">Subagents</a> · <a href="https://code.claude.com/docs/en/workflows" target="_blank" rel="noopener">Workflows</a> · <a href="https://code.claude.com/docs/en/agent-teams" target="_blank" rel="noopener">Agent teams</a> · <a href="https://code.claude.com/docs/en/hooks" target="_blank" rel="noopener">Hooks</a> · <a href="https://code.claude.com/docs/en/headless" target="_blank" rel="noopener">Headless mode</a> · <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">Model configuration</a></li>
+  </ul>
+</section>

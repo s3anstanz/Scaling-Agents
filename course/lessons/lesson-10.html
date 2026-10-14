@@ -1,0 +1,192 @@
+<section class="lesson" id="lesson-10" data-week="2" data-title="Loops between agents" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 10</span>
+    <span class="meta">Week 2 · Small teams</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="3-5">3–5 agents</span>
+  </div>
+  <h1>Loops between agents</h1>
+  <p class="lesson__deck">In Week 1 you engineered one agent's loop. Now the loop runs between two agents: a porter that writes and a reviewer that judges. This lesson covers what makes that loop converge, what makes it bounce forever, and how to stop it either way.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Why a second loop</h2>
+  <p>The porter already loops. It runs <code>scripts/verify.sh</code>, reads the failure, fixes the code and runs it again until the script exits 0. So why put a reviewer after it?</p>
+  <p>Because <code>verify.sh</code> only knows what the tests know. If the porter ports seven of eight Python tests, the script happily passes the seven. If the porter edits an expected value, the script passes the edited test. If the code uses a bare <code>%</code> on a path no test exercises, nothing fails. Tests are an excellent oracle for what they cover and silent about everything else.</p>
+  <p>Anthropic's "Building effective agents" calls the fix the <b>evaluator-optimizer</b> pattern. One model produces a result, a second model evaluates it against criteria and sends feedback, and the first model revises. On Kestrel the optimizer is the porter and the evaluator is the reviewer you defined in Lesson 08, with its rubric R1 to R5.</p>
+  <p>You now have three loops stacked inside each other. The innermost is the porter against <code>verify.sh</code>, which is mechanical and fast. The middle one is porter against reviewer, which is judgement and slower. The outermost is your Stop hook from Lesson 04, which keeps the whole session from finishing while any ported module fails. Each loop needs its own stop conditions.</p>
+
+  <h2><span class="h2num">Part two</span>Four things that make it converge</h2>
+  <p>A loop between agents <b>converges</b> when each round moves it closer to a pass and it ends in a bounded number of rounds. Four design choices make that happen.</p>
+  <p><b>1. A checkable rubric.</b> "Is this a good port?" never converges, because two models can disagree about "good" forever. "Does every Python test in <code>tests/ops/test_pad.py</code> have a TS counterpart, and what are the two counts?" converges, because it has an answer. Every reviewer item should be pass or fail with one line of evidence. That is why <code>reviewer.md</code> asks for <code>file:line</code> or command output on each of R1 to R5.</p>
+  <p><b>2. A maximum number of rounds.</b> A round is one porter call plus one reviewer call. Three rounds is a sensible cap for one Kestrel module. If three rounds have not produced a pass, the problem is usually missing information, and a fourth round just costs another two calls. The cap is the turn-cap stop condition from Lesson 02, applied to the outer loop.</p>
+  <p><b>3. Progress detection.</b> Compare each round's failing checks with the previous round's. Different findings mean the loop is moving: the porter fixed one thing and the reviewer found the next. The same failing check at the same place twice in a row means the loop is stuck. Stop and escalate to a person with both reports. This is the no-progress stop condition, and it catches the expensive case early.</p>
+  <p><b>4. An independent reviewer.</b> Independence has two parts. A <i>fresh context</i>: start a new reviewer call each round and give it only the module path and the rubric. Do not forward the porter's explanation, because a reviewer that reads "the <code>%</code> is fine, inputs are always positive" tends to agree. A <i>different model</i>: your porter runs on Sonnet or Haiku and your reviewer on Opus. Two copies of the same model with the same context tend to make the same mistakes and approve each other's work.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Suppose the lead forwards each porter report to the reviewer along with the module path, to "save it some time". The porter's NOTES line says: "Used plain % in wrap mode; offsets are non-negative in practice." The tests pass. What does the reviewer most likely do with R3?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>It most likely passes R3. The porter's claim arrives as context, it sounds reasonable, and the tests are green, so the reviewer inherits the porter's blind spot. A reviewer that sees only the code, the Python original and <code>MIGRATION.md</code> has to check for itself whether an offset can be negative, and in <code>pad</code>'s wrap mode it can. That check is trap T3: Python's <code>-1 % 5</code> is <code>4</code>, JavaScript's is <code>-1</code>. Saving the reviewer time this way removes the reason it exists.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Three rounds on <code>ops/pad.py</code></h2>
+  <p>Here is a loop that converges, round by round. The details are illustrative; your run will differ, and that is fine. Watch how each round's findings change, which is the signal that the loop is making progress.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 260" role="img" aria-label="A loop between the porter and the reviewer, with the lead sending the brief, receiving the verdict, and writing to MIGRATION.md">
+          <text class="g-cap" x="310" y="32" text-anchor="middle">verdict</text>
+          <text class="g-cap" x="420" y="72" text-anchor="middle">for review</text>
+          <text class="g-cap" x="420" y="198" text-anchor="middle">findings</text>
+          <g class="g-node g-node--orch" data-node="lead"><rect x="20" y="105" width="120" height="50" rx="8"/><text x="80" y="135">Lead session</text></g>
+          <g class="g-node g-node--worker" data-node="porter"><rect x="240" y="105" width="120" height="50" rx="8"/><text x="300" y="135">Porter</text></g>
+          <g class="g-node g-node--check" data-node="rev"><rect x="480" y="105" width="120" height="50" rx="8"/><text x="540" y="135">Reviewer</text></g>
+          <g class="g-node g-node--data" data-node="mig"><rect x="20" y="195" width="120" height="45" rx="8"/><text x="80" y="222">MIGRATION.md</text></g>
+          <path class="g-edge" data-edge="b" d="M140 130 L240 130"/>
+          <path class="g-edge" data-edge="f" d="M360 115 C 400 80, 440 80, 480 115"/>
+          <path class="g-edge g-edge--loop" data-edge="l" d="M480 145 C 440 180, 400 180, 360 145"/>
+          <path class="g-edge" data-edge="v" d="M540 105 L540 40 L80 40 L80 105"/>
+          <path class="g-edge" data-edge="m" d="M80 155 L80 195"/>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="lead,porter" data-edges="b">Round 1. The lead starts a porter call with one line: <code>kestrel/ops/pad.py</code>. Everything else the porter needs is in <code>porter.md</code> and <code>MIGRATION.md</code>.</li>
+        <li data-on="porter" data-edges="">The porter writes <code>pad.ts</code> with a plain <code>i % n</code> for wrap mode. It ports seven of the eight Python tests and skips the one with a negative offset. <code>verify.sh</code> exits 0. Its report says <code>VERIFY: pass</code>.</li>
+        <li data-on="porter,rev" data-edges="f">A fresh reviewer call on Opus gets the module path only. R1 passes. R2 fails: 8 Python tests, 7 TS tests, <code>test_wrap_negative</code> missing. R3 fails: bare <code>%</code> in the x-axis wrap. <code>VERDICT: FAIL</code>.</li>
+        <li data-on="rev,porter" data-edges="l">Round 2. The lead passes the FINDINGS verbatim to a new porter call. The porter adds the missing test, which fails with <code>-1</code> where Python gives <code>4</code>. That is T3. It changes the x-axis wrap to <code>((i % n) + n) % n</code> and <code>verify.sh</code> passes.</li>
+        <li data-on="porter,rev" data-edges="f">A new reviewer call: R2 now passes, but R3 still fails, this time on the y-axis wrap, which uses the same bare <code>%</code>. No test covers it. The failing check is the same, but the location and finding are new, so the loop is making progress. Continue.</li>
+        <li data-on="rev,porter" data-edges="l">Round 3. The porter fixes the y-axis wrap and adds a test for a negative y offset. Extra TS tests are fine; R2 only requires that every Python test has a match.</li>
+        <li data-on="porter,rev,lead" data-edges="f,v">The reviewer passes R1 to R5. <code>VERDICT: PASS</code> goes back to the lead. Three rounds, inside the cap.</li>
+        <li data-on="lead,mig" data-edges="m">The lead, the only writer of <code>MIGRATION.md</code>, appends T3 to Known traps with the fix pattern. The next agent that meets <code>%</code> on a possibly negative value starts with the answer.</li>
+      </ol>
+    </div>
+  </div>
+
+  <p>Notice what the tests alone would have shipped: a passing <code>pad.ts</code> with a T3 bug on both axes. The first round's <code>verify.sh</code> pass was true and useless. The reviewer earned its cost by checking coverage and trap patterns, which are the two things a test suite cannot check about itself.</p>
+
+  <h2><span class="h2num">Part four</span>How loops between agents fail</h2>
+  <p>The most common failure has a name: <b>ping-pong</b>. The reviewer asks for A, the porter does A, the next reviewer asks for B, which undoes A, and around it goes. It happens when the rubric leaves room for taste. Two fresh reviewer calls can reasonably prefer different import styles, and the porter faithfully alternates between them.</p>
+
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Failure</th><th>What you see</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>Ping-pong</td><td>Findings alternate between two states; the code flips back and forth</td><td>Rubric items come only from <code>MIGRATION.md</code> and the tests. Same failing check twice: escalate.</td></tr>
+      <tr><td>Rubber stamp</td><td>PASS on every round 1, including ports with gaps</td><td>Different model, fresh context, and evidence required on every rubric line</td></tr>
+      <tr><td>Moving goalposts</td><td>Each round brings new minor findings; three rounds never reach PASS</td><td>Only R1 to R5 can fail a port. Style comments go in a note and never fail a port.</td></tr>
+      <tr><td>Gaming the oracle</td><td>Tests pass after the porter changed an expected value</td><td>The porter's rule against it, plus R2 comparing values against the Python tests</td></tr>
+      <tr><td>Endless loop</td><td>Rounds keep going because no one counts them</td><td>The lead counts rounds and stops at 3, whatever the latest verdict says</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">Most of these are fixed ahead of time, in the role files and in the lead's loop prompt.</p>
+
+  <p>Here is what a converging loop on <code>analysis/stats.py</code> looks like from the lead's seat. It is illustrative, and shorter than <code>pad</code>.</p>
+  <div class="trace wide">
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Agent (porter): kestrel/analysis/stats.py</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">VERIFY: pass · RUNS: 2 · TRAPS: none</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Agent (reviewer): kestrel/analysis/stats.py, rubric R1–R5</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">VERDICT: FAIL · R3 fail: ts/src/analysis/stats.ts median() calls values.sort() with no comparator; [10, 9, 100] sorts as [10, 100, 9]</span></div>
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">Round 1 of 3. New finding. Forward FINDINGS verbatim to a new porter call.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Agent (porter): kestrel/analysis/stats.py + reviewer FINDINGS</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">VERIFY: pass · RUNS: 2 · TRAPS: T4 numeric sort needs (a, b) =&gt; a - b; added a test with [10, 9, 100]</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Agent (reviewer): kestrel/analysis/stats.py, rubric R1–R5</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">VERDICT: PASS</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Edit: MIGRATION.md (Known traps: T4)</span></div>
+    <div class="trace__row" data-kind="stop"><span class="trace__k">stop</span><span class="trace__v">Stop hook runs scripts/stop_gate.py: all ported modules pass. Session ends.</span></div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Round 2's reviewer reports the same R3 failure as round 1, at the same line of <code>pad.ts</code>, with the same explanation. The cap is three rounds. What should the lead do?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Run round 3; the cap has not been reached</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">Stop and escalate to you with both reports</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Ask the reviewer to make the fix itself, since it knows exactly what is wrong</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Rerun the review with a cheaper model to get a second opinion</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The cap is a ceiling, and reaching it is never the goal. An identical failure means the porter did not or could not act on the finding. A third round with the same inputs will most likely produce the same output and cost two more calls.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>No progress is a stop condition in its own right. Something is missing that neither agent can supply: maybe the finding is wrong, or the porter misreads it, or <code>MIGRATION.md</code> is silent on the case. A person reading both reports can usually tell which in a minute.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>The reviewer has no edit tools, by design. If it could fix things, nobody would review its fix, and the loop would lose its independent judge.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Shopping for a friendlier reviewer turns the evaluator into a rubber stamp. If you doubt the finding, that doubt is itself a reason to escalate.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>Making a subagent's "done" mechanical</h2>
+  <p>In Lesson 04 the <b>Stop hook</b> made the lead's "done" mechanical: when Claude tries to finish, your script runs, and exit code 2 sends it back to work. Claude Code has the same hook for subagents, called <b>SubagentStop</b>. It runs when a subagent tries to finish, and its input JSON includes <code>agent_type</code>, so your script can act only for the porter and let the planner and reviewer finish freely. The same rules apply as for Stop: check <code>stop_hook_active</code> to avoid an endless block, and remember that Claude Code caps consecutive stop-hook continuations at 8.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>.claude/settings.local.json (hooks only)</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre>{</pre></div></li>
+        <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">"hooks"</span>: {</pre></div></li>
+        <li><button class="cl" data-note="n1"><span class="ln">3</span><pre>    <span class="tk-key">"Stop"</span>: [</pre></button></li>
+        <li><div class="cl"><span class="ln">4</span><pre>      { <span class="tk-key">"hooks"</span>: [ { <span class="tk-key">"type"</span>: <span class="tk-str">"command"</span>, <span class="tk-key">"command"</span>: <span class="tk-str">"python scripts/stop_gate.py"</span> } ] }</pre></div></li>
+        <li><div class="cl"><span class="ln">5</span><pre>    ],</pre></div></li>
+        <li><button class="cl" data-note="n2"><span class="ln">6</span><pre>    <span class="tk-key">"SubagentStop"</span>: [</pre></button></li>
+        <li><button class="cl" data-note="n3"><span class="ln">7</span><pre>      { <span class="tk-key">"hooks"</span>: [ { <span class="tk-key">"type"</span>: <span class="tk-str">"command"</span>, <span class="tk-key">"command"</span>: <span class="tk-str">"python scripts/subagent_gate.py"</span> } ] }</pre></button></li>
+        <li><div class="cl"><span class="ln">8</span><pre>    ]</pre></div></li>
+        <li><div class="cl"><span class="ln">9</span><pre>  }</pre></div></li>
+        <li><div class="cl"><span class="ln">10</span><pre>}</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line. This is the lab's stretch configuration.</p></div>
+        <div class="cnote" data-note="n1"><div class="label">Line 3 · the lead's gate</div><p>Your Lesson 04 hook, unchanged. It guards the outermost loop: the session cannot end while a ported module fails.</p></div>
+        <div class="cnote" data-note="n2"><div class="label">Line 6 · the subagent's gate</div><p>Same shape as Stop, fired when any subagent tries to finish. The script receives <code>agent_type</code> and should exit 0 at once for anything other than <code>porter</code>.</p></div>
+        <div class="cnote" data-note="n3"><div class="label">Line 7 · scope the check</div><p>Be careful what the porter's gate checks. If it reruns all of <code>status.py --json</code> like <code>stop_gate.py</code> does, a porter can be blocked by another porter's half-finished module during a parallel run. With parallel porters, keep the repo-wide check at the lead and let the porter's own <code>verify.sh</code> loop and the reviewer carry the rest.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-10">
+    <div class="lab__head">
+      <span class="label">Lab 10 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $1.50–$4.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run a bounded porter and reviewer loop, at most 3 rounds with no-progress detection, on <code>ops/pad.py</code> (trap T3) and <code>analysis/stats.py</code> (trap T4).</p>
+      <ol class="lab__steps">
+        <li><p>Confirm both modules are ready. <code>analysis/stats</code> needs <code>ops/histogram</code>, which you ported in Lab 09.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Start the lead.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+        </li>
+        <li><p>Give it the loop rules. Every stop condition from this lesson is written into the prompt.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Port kestrel/ops/pad.py with a porter/reviewer loop. Rules:
+
+- A round is: one porter agent call, then one new reviewer agent call.
+- Give the reviewer only the module path and ask it to apply its rubric R1-R5. Do not pass it the porter's report or explanation.
+- If the reviewer returns VERDICT: PASS, the loop ends with success.
+- If it returns FAIL, pass its FINDINGS verbatim to a new porter call. That starts the next round.
+- Maximum 3 rounds.
+- No-progress rule: if the reviewer reports the same failing check at the same location in two consecutive rounds, stop early and show me both reports instead of starting another round.
+
+When the loop ends, append any new trap to Known traps in MIGRATION.md (you are the only writer of that file) and print a table: round, porter RUNS, verdict, failing checks.
+
+Then run the same loop for kestrel/analysis/stats.py.</code></pre></div>
+        </li>
+        <li><p>Check the state of the port and the cost.</p>
+          <div class="cmd"><pre><code>python scripts/status.py</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Two round tables. <code>pad</code> often needs two or three rounds; look for T3 in a porter TRAPS line or a reviewer R3 finding about <code>%</code>. <code>stats</code> often fails R3 once on <code>.sort()</code> without a comparator (T4) and passes in round 2. If either loop stops on the no-progress rule, read the two reports yourself: that is the escalation working. By the end <code>MIGRATION.md</code> should list T3 and T4, and <code>status.py</code> should show every op, both <code>io</code> modules and <code>analysis/stats</code> ported and passing. Week 3 starts from here.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Ask Claude to write <code>scripts/subagent_gate.py</code>, modeled on <code>scripts/stop_gate.py</code>: read the hook JSON from stdin, exit 0 if <code>stop_hook_active</code> is true or <code>agent_type</code> is not <code>porter</code>, otherwise run <code>python scripts/status.py --json</code> and exit 2 with the failures on stderr. Add the SubagentStop block above to <code>.claude/settings.local.json</code>, start a fresh session, and port <code>analysis/edges.py</code> with a single porter. Then think about what this gate would do to three porters running in parallel.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>A loop between agents converges when the rubric is checkable, rounds are capped, a repeated failure triggers escalation, and the reviewer sees the work with fresh context and a different model. Without those, two agents can argue forever on your budget.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 11 · Work as a dependency graph. Week 3 starts by drawing all of Kestrel as waves and a critical path, and sizing the team to fit.</div>
+</section>

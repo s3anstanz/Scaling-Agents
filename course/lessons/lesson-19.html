@@ -1,0 +1,234 @@
+<section class="lesson" id="lesson-19" data-week="4" data-title="Tracing, cost, and when 100 is worse than 10" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 19</span>
+    <span class="meta">Week 4 · Scale</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="100">100 agents</span>
+  </div>
+  <h1>Tracing, cost, and when 100 is worse than 10</h1>
+  <p class="lesson__deck">More agents buy wall-clock time. They pay for it in tokens, coordination and risk, and past a certain point they stop buying anything at all. This lesson gives you a cost model, runs the whole starter with a fleet so you have real numbers, and extrapolates to 240 modules without pretending to more precision than you have.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Trace every node</h2>
+  <p>A <b>trace</b> is a record of what each node in your graph did: which module, which model, how many attempts, what status, and roughly what it cost. Without one, a fleet run is a black box that turns money into a mix of green and red. With one, you can answer the questions that matter. Which modules are expensive? Do retries cluster in one package? Did the breaker trip on an upstream cause or on noise?</p>
+  <p>You already have most of the pieces. The workflow's schema results give you module, status and attempts per agent. <code>/workflows</code> shows the live shape and labels. <code>/usage</code> shows what the session has spent, and for headless runs the JSON output carries <code>total_cost_usd</code> and <code>num_turns</code> per run (Lesson 12). And <code>scripts/status.py</code> is the ground truth for what actually works. The lab's workflow puts these together: it logs per-wave tallies and verify-run counts, and you read the session cost before and after.</p>
+  <p>Divide the cost by the modules that came out green, and you get the single most useful number in this lesson: <b>cost per green module</b>. It folds in retries, verify agents and wasted attempts, because all of them were spent to get those modules over the line.</p>
+
+  <h2><span class="h2num">Part two</span>A cost model and a time model</h2>
+  <p>Tokens are cost, so a fleet's cost is mostly its token count. A useful approximation for a migration:</p>
+  <p><code>total cost ≈ (cost per green module × modules) + coordination + waste</code></p>
+  <p>Coordination is everything that is not porting: scout agents, sub-leads, integrators, reviewers, the difftest gate. Waste is work you threw away: ports on a broken dependency, duplicate work after a non-idempotent rerun, runaways. Anthropic's research post measured agents using about 4x the tokens of a chat, and multi-agent systems about 15x. It also found that token usage alone explained about 80% of the performance differences on their browsing eval. In research, more tokens often bought better answers. In porting, the bar is a test that either passes or fails. Tokens spent after a module is green buy nothing.</p>
+  <p>Time behaves differently. Each wave of the dependency graph is a barrier, because wave L4 cannot start until L3's modules exist. Within a wave, <i>N</i> agents work through the modules in rounds. So the number of rounds is the sum, over waves, of the wave size divided by <i>N</i>, rounded up. When <i>N</i> is at least as large as the widest wave, every wave takes one round, and you hit a floor: the number of waves. This is Amdahl's law in migration form. The part of the work that must happen in sequence sets a limit that no number of agents can beat.</p>
+  <p>The full Kestrel library has about 240 modules in 7 waves. To make the arithmetic concrete, assume the story's waves hold 4, 10, 6, 140, 50, 20 and 10 modules. That split is illustrative; the 7 waves and the wide middle wave are the real shape.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 215" role="img" aria-label="Seven waves in a chain, L0 to L6, with module counts 4, 10, 6, 140, 50, 20, 10, and the number of rounds each wave needs at 10, 25 and 100 agents.">
+      <text class="g-cap" x="130" y="24">Critical path: 7 waves, so at least 7 rounds however many agents you add</text>
+      <g class="g-node g-node--worker" data-node="l0"><rect x="130" y="40" width="64" height="40" rx="8"/><text x="162" y="65">L0</text></g>
+      <g class="g-node g-node--worker" data-node="l1"><rect x="214" y="40" width="64" height="40" rx="8"/><text x="246" y="65">L1</text></g>
+      <g class="g-node g-node--worker" data-node="l2"><rect x="298" y="40" width="64" height="40" rx="8"/><text x="330" y="65">L2</text></g>
+      <g class="g-node g-node--worker" data-node="l3"><rect x="382" y="40" width="64" height="40" rx="8"/><text x="414" y="65">L3</text></g>
+      <g class="g-node g-node--worker" data-node="l4"><rect x="466" y="40" width="64" height="40" rx="8"/><text x="498" y="65">L4</text></g>
+      <g class="g-node g-node--worker" data-node="l5"><rect x="550" y="40" width="64" height="40" rx="8"/><text x="582" y="65">L5</text></g>
+      <g class="g-node g-node--worker" data-node="l6"><rect x="634" y="40" width="64" height="40" rx="8"/><text x="666" y="65">L6</text></g>
+      <path class="g-edge" d="M194 60 L214 60"/>
+      <path class="g-edge" d="M278 60 L298 60"/>
+      <path class="g-edge" d="M362 60 L382 60"/>
+      <path class="g-edge" d="M446 60 L466 60"/>
+      <path class="g-edge" d="M530 60 L550 60"/>
+      <path class="g-edge" d="M614 60 L634 60"/>
+      <text class="g-cap" x="10" y="110">modules</text>
+      <text class="g-cap" x="162" y="110" text-anchor="middle">4</text><text class="g-cap" x="246" y="110" text-anchor="middle">10</text><text class="g-cap" x="330" y="110" text-anchor="middle">6</text><text class="g-cap" x="414" y="110" text-anchor="middle">140</text><text class="g-cap" x="498" y="110" text-anchor="middle">50</text><text class="g-cap" x="582" y="110" text-anchor="middle">20</text><text class="g-cap" x="666" y="110" text-anchor="middle">10</text>
+      <text class="g-cap" x="10" y="140">rounds at 10</text>
+      <text class="g-cap" x="162" y="140" text-anchor="middle">1</text><text class="g-cap" x="246" y="140" text-anchor="middle">1</text><text class="g-cap" x="330" y="140" text-anchor="middle">1</text><text class="g-cap" x="414" y="140" text-anchor="middle">14</text><text class="g-cap" x="498" y="140" text-anchor="middle">5</text><text class="g-cap" x="582" y="140" text-anchor="middle">2</text><text class="g-cap" x="666" y="140" text-anchor="middle">1</text>
+      <text class="g-cap" x="10" y="170">rounds at 25</text>
+      <text class="g-cap" x="162" y="170" text-anchor="middle">1</text><text class="g-cap" x="246" y="170" text-anchor="middle">1</text><text class="g-cap" x="330" y="170" text-anchor="middle">1</text><text class="g-cap" x="414" y="170" text-anchor="middle">6</text><text class="g-cap" x="498" y="170" text-anchor="middle">2</text><text class="g-cap" x="582" y="170" text-anchor="middle">1</text><text class="g-cap" x="666" y="170" text-anchor="middle">1</text>
+      <text class="g-cap" x="10" y="200">rounds at 100</text>
+      <text class="g-cap" x="162" y="200" text-anchor="middle">1</text><text class="g-cap" x="246" y="200" text-anchor="middle">1</text><text class="g-cap" x="330" y="200" text-anchor="middle">1</text><text class="g-cap" x="414" y="200" text-anchor="middle">2</text><text class="g-cap" x="498" y="200" text-anchor="middle">1</text><text class="g-cap" x="582" y="200" text-anchor="middle">1</text><text class="g-cap" x="666" y="200" text-anchor="middle">1</text>
+    </svg>
+    <figcaption>Rounds per wave for the illustrative 240-module split. Totals: 25 rounds at 10 agents, 13 at 25, 8 at 100, and 240 for one module at a time. Only L3 and L4 get faster past 25 agents.</figcaption>
+  </figure>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Using the figure, how much faster does the 240-module migration get when you go from 25 agents to 100? Four times the agents: is it four times faster?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Rounds drop from 13 to 8, so at best about 1.6x faster for 4x the agents. Five of the seven waves already finish in one round at 25 agents, so extra agents only help L3 and L4. And that 1.6x assumes each round takes the same time at 100 agents as at 25, which it will not: more parallel writers means more conflicts for the integrator, more agents running test suites on the same machine, and more correlated failures when one rule in <code>MIGRATION.md</code> is wrong. The real gain is smaller, and it can go negative.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>The coordination tax</h2>
+  <p>Each extra agent adds a little work that is not porting. At 10 agents you barely notice it. At 100 it is a line item. These are the costs that grow with <i>N</i> on Kestrel:</p>
+  <ul>
+    <li><b>Merge and integration.</b> More modules land at once, so the integrator regenerates the barrel and resolves more overlaps per round. With worktrees, each agent's branch also has to be merged.</li>
+    <li><b>Reading load.</b> More reports per round means more sub-leads, and each sub-lead is another agent's worth of tokens (Lesson 17).</li>
+    <li><b>Blast radius.</b> A wrong instruction in <code>MIGRATION.md</code> runs once per agent. At 100 agents a bad rule is wrong 100 times before anyone looks.</li>
+    <li><b>Machine and account limits.</b> Every port ends with <code>scripts/verify.sh</code>, which runs pytest and vitest. A hundred of those at once on one laptop slows every one of them, and you are more likely to hit your account's rate limits.</li>
+    <li><b>Communication.</b> If agents talk to each other directly, channels grow as <i>n</i>(<i>n</i>−1)/2. That is 45 for 10 agents and 4,950 for 100 (Lesson 13). Hub-and-spoke and trees exist to avoid this.</li>
+    <li><b>Human review.</b> The difftest gate and your sign-off do not get faster with more agents. A bigger batch of changes arrives at them all at once.</li>
+  </ul>
+  <p>Workflows run 16 agents at once by default (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, adjustable from 1 to 256). For Kestrel that is a sensible place to sit. The starter's widest wave is 14, so 16 never waits. In the full library, 16 turns the 140-module wave into 9 rounds and the whole run into 19, against 13 rounds at 25 agents, and it does so with noticeably less tax. Raise it only after you have watched a run at 16 and know what each round really costs.</p>
+
+  <p>Try the trade-off yourself. Drag the agent count and watch wall-clock and cost move against each other.</p>
+  <div class="ex wide c-sim" data-component="scale-sim" data-modules="240" data-waves="7" data-start="25"></div>
+
+  <h2><span class="h2num">Part four</span>An honest extrapolation</h2>
+  <p>Here is the model applied to 240 modules. Two inputs are placeholders until you run the lab: about $0.25 per green module and about 6 minutes per round. Both are illustrative. The coordination overhead percentages are judgment calls based on the list above, not measurements. Treat every figure in this table as an estimate and replace the inputs with your own numbers.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Agents at once</th><th>Rounds</th><th>Wall-clock (est.)</th><th>Porting cost (est.)</th><th>Coordination (est.)</th><th>Total (est.)</th></tr></thead>
+      <tbody>
+        <tr><td>1 (one module at a time)</td><td>240</td><td>~24 h</td><td>~$60</td><td>~0%</td><td>~$60</td></tr>
+        <tr><td>10</td><td>25</td><td>~2.5 h</td><td>~$60</td><td>+10–15%</td><td>~$66–$69</td></tr>
+        <tr><td>16 (default)</td><td>19</td><td>~1.9 h</td><td>~$60</td><td>+10–20%</td><td>~$66–$72</td></tr>
+        <tr><td>25</td><td>13</td><td>~1.3 h</td><td>~$60</td><td>+15–25%</td><td>~$69–$75</td></tr>
+        <tr><td>100</td><td>8</td><td>~50 min, plus slower rounds</td><td>~$60</td><td>+30–50%</td><td>~$78–$90</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Estimates from an illustrative model: 240 modules × $0.25, 6 minutes per round, the wave split above. The shape is the lesson: cost rises slowly, time falls fast and then flattens.</p>
+  <p>Read the table from the top. Going from 1 to 10 agents cuts wall-clock by roughly ten times for a small rise in cost. That is an easy decision. Going from 10 to 25 still saves over an hour. Going from 25 to 100 saves perhaps half an hour on paper, costs noticeably more, and carries real risk that slower rounds eat the saving. For most teams, 100 agents is worse than 25, unless a deadline makes half an hour worth a lot.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Your Lab 19 trace shows the 24 starter modules took 41 <code>verify.sh</code> runs, and most of the extra runs were in <code>ops/</code> on rounding and modulo. Which single change most lowers cost per green module without slowing the run?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Raise concurrency to 100</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Switch every porter from <code>haiku</code> to <code>opus</code></span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Write the rounding and modulo traps into <code>MIGRATION.md</code> before the next run</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Drop the separate verify step and trust the porter's report</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The widest starter wave is 14, so slots beyond 16 sit idle. Concurrency changes wall-clock, not cost per module, and here it changes neither.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Fewer retries, maybe, but each attempt costs far more. Spend the expensive model on the few modules that fail twice, not on all 24.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>Retries are the waste term in the cost model, and these ones have a known cause. Every porter loads <code>MIGRATION.md</code>, so one paragraph prevents the same failure in every module that would have hit it. At 240 modules that paragraph pays for itself many times over.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Cheaper per run and more expensive overall. Unverified red modules slip into later waves, and you pay for them again when <code>pipeline/steps</code> or the difftest fails.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="twentyfive">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Your lead asks whether to run Kestrel-240 with 25 agents or 100.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>The target is "done by Friday", and it is Tuesday.</li><li>Your Lab 19 numbers match the table's inputs closely.</li><li>The run happens on one workstation under one account.</li><li>One person will review the difftest results and sign off.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="twentyfive">25 agents</button>
+        <button class="vbtn" data-pick="hundred">100 agents</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="twentyfive"><span class="verdict-tag" data-v="pass">Right call</span><p>An estimated 1.3 hours against a three-day deadline leaves room for two or three full reruns. One workstation running 100 test suites at once would slow each round, and the single reviewer is the real bottleneck either way.</p></div>
+        <div class="vfb" data-for="hundred"><span class="verdict-tag" data-v="fail">Not quite</span><p>The best case saves about half an hour, which the deadline does not need. You would pay more for coordination, raise the blast radius of any bad rule, and likely lose the saving to slower rounds on one machine.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-19">
+    <div class="lab__head">
+      <span class="label">Lab 19 · In Claude Code</span>
+      <span class="lab__meta">~30 min · est. $3–$8</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port all 24 starter modules with a fleet of cheap workers, measure cost per green module and wall-clock, then extrapolate to 240 modules at 10, 25 and 100 agents.</p>
+      <ol class="lab__steps">
+        <li><p>Reset the port in <code>kestrel-scale/</code>.</p>
+          <div class="cmd"><pre><code>cd kestrel-scale
+git add -A &amp;&amp; git commit -qm "before lab 19" --allow-empty
+git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
+        </li>
+        <li><p>Create the workflow. It loops over waves until <code>status.py</code> has nothing ready, with a no-progress check, a wave cap and a breaker.</p>
+          <div class="cmd" data-file=".claude/workflows/port-all.js"><pre><code>export const meta = {
+  name: 'port-all',
+  description: 'Port every remaining starter module wave by wave until status.py has nothing ready',
+  phases: [{ title: 'Waves' }, { title: 'Tally' }]
+}
+
+const MAX_WAVES = 8
+const BREAKER = 0.3
+const listSchema = { type: 'object', properties: { modules: { type: 'array', items: { type: 'string' } } }, required: ['modules'] }
+const resultSchema = {
+  type: 'object',
+  properties: {
+    module: { type: 'string' },
+    status: { type: 'string', enum: ['passed', 'failed', 'skipped', 'blocked'] },
+    attempts: { type: 'integer', description: 'How many times you ran scripts/verify.sh' }
+  },
+  required: ['module', 'status', 'attempts']
+}
+
+const port = (m) =&gt; agent(
+  `Port ${m} and its tests to TypeScript per MIGRATION.md. If python scripts/status.py --json shows it passing, return "skipped".
+Port every Python test as it("test_name"). Edit only this module's files under ts/src and ts/test; never ts/src/index.ts, MIGRATION.md or a dependency.
+If a dependency looks broken, return "blocked". You are done only when scripts/verify.sh ${m} exits 0.
+Run verify.sh at most 3 times; after a failure, read the output before editing again.`,
+  { label: `port ${m}`, model: 'haiku', schema: resultSchema })
+
+phase('Waves')
+const all = []
+let lastKey = ''
+let stopped = 'dry: nothing left to port'
+for (let w = 1; w &lt;= MAX_WAVES; w++) {
+  const ready = (await agent('Run python scripts/status.py --next. Return the module ids it prints, like ops/blur. Edit nothing.',
+    { label: `find wave ${w}`, model: 'haiku', schema: listSchema }))?.modules ?? []
+  const key = ready.slice().sort().join(',')
+  if (ready.length === 0) break
+  if (key === lastKey) { stopped = `no progress: wave ${w} is the same set as wave ${w - 1}`; break }
+  lastKey = key
+  const results = (await parallel(ready.map((m) =&gt; () =&gt; port(m)))).filter(Boolean)
+  all.push(...results)
+  const red = results.filter((r) =&gt; r.status === 'failed' || r.status === 'blocked').length
+  log(`Wave ${w}: ${ready.length} ready, ${results.length - red} green, ${red} red`)
+  if (red / Math.max(results.length, 1) &gt; BREAKER) { stopped = `breaker tripped in wave ${w}`; break }
+  if (w === MAX_WAVES) stopped = 'wave cap reached'
+}
+
+phase('Tally')
+await agent('Run python scripts/gen_barrel.py to regenerate ts/src/index.ts. Edit nothing else.', { label: 'regenerate barrel', model: 'haiku' })
+const runs = all.reduce((n, r) =&gt; n + (r.attempts ?? 1), 0)
+const green = all.filter((r) =&gt; r.status === 'passed').length
+log(`Stopped because: ${stopped}`)
+log(`${green} ported green, ${all.length - green} not green, ${runs} verify.sh runs (${(runs / Math.max(all.length, 1)).toFixed(2)} per module)`)
+log('Now run /usage, note the cost, and divide by the green count for cost per module.')</code></pre></div>
+        </li>
+        <li><p>Start Claude Code and read the starting cost.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+        <li><p>In a second terminal, note the start time. Then run the workflow. Expect the "Large workflow" warning, since this run uses well over 25 agents. During the L3 wave, open <code>/workflows</code> and count how many porters are running at once.</p>
+          <div class="cmd"><pre><code>date</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-all</code></pre></div>
+        </li>
+        <li><p>When it finishes, note the end time, the cost and the final state.</p>
+          <div class="cmd"><pre><code>date
+python scripts/status.py</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+        <li><p>Have Claude build the extrapolation from your numbers. Fill in the three blanks first.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Write SCALE.md from my Lab 19 run.
+Measured: cost delta $____, green modules ____, wall-clock ____ minutes, 7 waves.
+Compute cost per green module and minutes per round (wall-clock / 7).
+Then extrapolate to the 240-module library with waves of 4, 10, 6, 140, 50, 20, 10
+at 1, 10, 16, 25 and 100 agents: rounds = sum of ceil(wave / agents),
+wall-clock = rounds x minutes per round, cost = 240 x cost per module plus a
+coordination overhead you justify for each row. Label every extrapolated number
+as an estimate, and list what the model ignores.</code></pre></div>
+        </li>
+        <li><p>Commit the run and the analysis.</p>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 19: full starter, SCALE.md"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Seven waves: 2, 2, 1, 14, 3, 1 and 1 modules. Most of the wall-clock goes to the narrow waves, where one or two agents work while the rest of the fleet has nothing to do. The L3 wave shows up to 14 porters at once, under the 16 default. The tally prints the verify runs per module; anything well above 1.5 points at traps worth writing into <code>MIGRATION.md</code>. Your <code>SCALE.md</code> table should have the same shape as the one in Part four, with your numbers in it.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Reset and rerun with <code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=4</code> set before starting <code>claude</code>. Cost should come out similar; wall-clock should rise, almost all of it in L3. Add the measured point to <code>SCALE.md</code> and check how well your model predicted it.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Agents trade money for time, and the trade gets worse as you add them. The critical path sets a floor no fleet can beat, and coordination costs rise with every agent. Measure cost per green module, model rounds per wave, and stop adding agents where the curve flattens.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 20 · Capstone: design the 100-agent migration. Everything from the course, put together into one design and one workflow you run end to end.</div>
+</section>

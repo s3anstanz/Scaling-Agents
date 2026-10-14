@@ -1,0 +1,316 @@
+<section class="lesson" id="lesson-09" data-week="2" data-title="Graph shapes: chain, diamond, double diamond" data-minutes="17">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 09</span>
+    <span class="meta">Week 2 · Small teams</span>
+    <span class="meta">~17 min</span>
+    <span class="scale" data-scale="3-5">3–5 agents</span>
+  </div>
+  <h1>Graph shapes: chain, diamond, double diamond</h1>
+  <p class="lesson__deck">Every team of agents has a shape, whether you drew it or not. This lesson gives you five shapes, a two-question test for when the double diamond earns its cost, and a lab where you run one on the rest of <code>ops/</code>.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>What graph engineering means</h2>
+  <p>Draw any multi-agent run as a graph. The <b>nodes</b> are agents or steps: the lead, a planner call, a porter call, a run of <code>verify.sh</code>. The <b>edges</b> are handoffs: a brief going out, a report coming back. <b>Graph engineering</b> is choosing that shape on purpose and wiring it.</p>
+  <p>The shape decides four things. What runs in parallel. Where results meet and have to be merged. Where detail gets lost, since every edge is a lossy handoff that carries only a report. And where the checks sit. Change the shape and you change the speed, the cost and the failure modes of the whole run, even with the same agents and the same prompts.</p>
+  <p>None of this is new. Anthropic's "Building effective agents" names the same patterns: prompt chaining, parallelization (sectioning and voting), orchestrator-workers, and evaluator-optimizer. Its first piece of advice also applies here: start with the simplest shape that works and add structure only when it pays for itself.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 250" role="img" aria-label="Three small graphs: a chain of planner, porter and reviewer; a tree with a lead, two sub-leads and four workers; a cycle between porter and reviewer that exits to accepted">
+      <text class="g-cap" x="120" y="30" text-anchor="middle">Chain</text>
+      <text class="g-cap" x="360" y="30" text-anchor="middle">Tree</text>
+      <text class="g-cap" x="600" y="30" text-anchor="middle">Cycle</text>
+      <g class="g-node g-node--worker"><rect x="60" y="50" width="120" height="40" rx="8"/><text x="120" y="75">Planner</text></g>
+      <g class="g-node g-node--worker"><rect x="60" y="120" width="120" height="40" rx="8"/><text x="120" y="145">Porter</text></g>
+      <g class="g-node g-node--check"><rect x="60" y="190" width="120" height="40" rx="8"/><text x="120" y="215">Reviewer</text></g>
+      <path class="g-edge" d="M120 90 L120 120"/>
+      <path class="g-edge" d="M120 160 L120 190"/>
+      <g class="g-node g-node--orch"><rect x="300" y="50" width="120" height="40" rx="8"/><text x="360" y="75">Lead</text></g>
+      <g class="g-node g-node--orch"><rect x="255" y="120" width="90" height="40" rx="8"/><text x="300" y="145">ops lead</text></g>
+      <g class="g-node g-node--orch"><rect x="375" y="120" width="90" height="40" rx="8"/><text x="420" y="145">io lead</text></g>
+      <g class="g-node g-node--worker"><rect x="250" y="190" width="40" height="30" rx="6"/><text x="270" y="210">W</text></g>
+      <g class="g-node g-node--worker"><rect x="310" y="190" width="40" height="30" rx="6"/><text x="330" y="210">W</text></g>
+      <g class="g-node g-node--worker"><rect x="370" y="190" width="40" height="30" rx="6"/><text x="390" y="210">W</text></g>
+      <g class="g-node g-node--worker"><rect x="430" y="190" width="40" height="30" rx="6"/><text x="450" y="210">W</text></g>
+      <path class="g-edge" d="M360 90 C 360 105, 300 105, 300 120"/>
+      <path class="g-edge" d="M360 90 C 360 105, 420 105, 420 120"/>
+      <path class="g-edge" d="M300 160 L270 190"/>
+      <path class="g-edge" d="M300 160 L330 190"/>
+      <path class="g-edge" d="M420 160 L390 190"/>
+      <path class="g-edge" d="M420 160 L450 190"/>
+      <g class="g-node g-node--worker"><rect x="540" y="50" width="120" height="40" rx="8"/><text x="600" y="75">Porter</text></g>
+      <g class="g-node g-node--check"><rect x="540" y="120" width="120" height="40" rx="8"/><text x="600" y="145">Reviewer</text></g>
+      <g class="g-node g-node--data"><rect x="540" y="190" width="120" height="40" rx="8"/><text x="600" y="215">Accepted</text></g>
+      <path class="g-edge" d="M585 90 L585 120"/>
+      <path class="g-edge g-edge--loop" d="M615 120 L615 90"/>
+      <text class="g-cap" x="642" y="110" text-anchor="middle">fix</text>
+      <path class="g-edge" d="M600 160 L600 190"/>
+    </svg>
+    <figcaption>Three of the five shapes. The diamond and double diamond get steppers below.</figcaption>
+  </figure>
+
+  <h2><span class="h2num">Part two</span>Chain: when each step needs the last one's output</h2>
+  <p>A <b>chain</b> is a sequence. Step two starts when step one finishes and uses what it produced. Anthropic calls this prompt chaining. You built one in Lab 08 for a single module: planner, then porter, then reviewer. The core wave was also a chain: <code>mathutil</code>, then <code>color</code>, then <code>image</code>, because each import has to exist before the next module can pass its tests.</p>
+  <p>Use a chain when the dependency forces the order. It is the easiest shape to debug, because there is one path and you can read it top to bottom. Its costs are speed, since nothing overlaps, and error propagation. A mistake early in the chain flows into every later step, and every hop is a handoff that drops detail. Keep chains short and put a check at the end.</p>
+
+  <h2><span class="h2num">Part three</span>Diamond: one split, many workers, one merge</h2>
+  <p>A <b>diamond</b> fans out and then fans back in. One node splits the work, several workers run in parallel, and one node merges the results. Anthropic's names for it are parallelization by sectioning and orchestrator-workers. Lab 06 was a diamond with the lead as both splitter and merger.</p>
+  <p>A diamond works when three things are true. The approach is known, so the splitter can write each worker's brief without guessing. The pieces are independent, so no worker needs another's output. And the merge is cheap, so combining results does not cost more than the parallelism saved. The four remaining ops (<code>rotate</code>, <code>resize</code>, <code>contrast</code>, <code>histogram</code>) pass the first two tests easily. You have ported seven ops the same way, and none of the four imports another.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it · the diamond</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 260" role="img" aria-label="Diamond: the lead splits the remaining ops into three packages, three porters run in parallel, and a reviewer merges and verifies">
+          <text class="g-cap" x="220" y="30" text-anchor="middle">fan-out</text>
+          <text class="g-cap" x="500" y="30" text-anchor="middle">fan-in</text>
+          <g class="g-node g-node--orch" data-node="split"><rect x="20" y="105" width="120" height="50" rx="8"/><text x="80" y="135">Lead: split</text></g>
+          <g class="g-node g-node--worker" data-node="w1"><rect x="300" y="20" width="120" height="50" rx="8"/><text x="360" y="50">rotate, resize</text></g>
+          <g class="g-node g-node--worker" data-node="w2"><rect x="300" y="105" width="120" height="50" rx="8"/><text x="360" y="135">contrast</text></g>
+          <g class="g-node g-node--worker" data-node="w3"><rect x="300" y="190" width="120" height="50" rx="8"/><text x="360" y="220">histogram</text></g>
+          <g class="g-node g-node--check" data-node="merge"><rect x="580" y="105" width="120" height="50" rx="8"/><text x="640" y="135">Reviewer</text></g>
+          <path class="g-edge" data-edge="e1" d="M140 130 C 220 130, 220 45, 300 45"/>
+          <path class="g-edge" data-edge="e2" d="M140 130 L300 130"/>
+          <path class="g-edge" data-edge="e3" d="M140 130 C 220 130, 220 215, 300 215"/>
+          <path class="g-edge" data-edge="e4" d="M420 45 C 500 45, 500 130, 580 130"/>
+          <path class="g-edge" data-edge="e5" d="M420 130 L580 130"/>
+          <path class="g-edge" data-edge="e6" d="M420 215 C 500 215, 500 130, 580 130"/>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="split" data-edges="">The splitter reads <code>python scripts/status.py --next</code> and <code>MIGRATION.md</code>. The approach is settled: one porter call per module, same rules as the last seven ops. Its only real decision is how to group the work.</li>
+        <li data-on="split,w1,w2,w3" data-edges="e1,e2,e3">Fan-out. Each package gets a short brief: the module paths, plus the trap that applies. <code>rotate</code> and <code>resize</code> share trap T2, so they go to one package and the lead can pass the first one's T2 notes to the second.</li>
+        <li data-on="w1,w2,w3" data-edges="">The workers run in parallel, each in a fresh context. Wall-clock time is now the slowest package, which is the two-module one. A diamond is only as fast as its heaviest branch, so balance matters.</li>
+        <li data-on="w1,w2,w3,merge" data-edges="e4,e5,e6">Fan-in. Three reports arrive. This is the only place results meet, so it is where collisions show up: three edits to <code>ts/src/index.ts</code>, or two packages that each wrote a private <code>floorDiv</code>.</li>
+        <li data-on="merge" data-edges="">The merger runs <code>scripts/verify.sh</code> on all four modules and <code>python scripts/status.py</code>. One check covers the whole fan-in. If the split was clean, this step is short. If it was not, the merge cost eats the time the parallelism saved.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>All three packages in the diamond report <code>VERIFY: pass</code>. Each module's tests pass on their own. What can still be wrong when the reviewer looks at the four modules together?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Plenty. Two porters may have solved T2 differently: one imports <code>floorDiv</code> from the ported <code>mathutil</code>, the other wrote a private copy. Both pass, and now the codebase has two answers to one question. The barrel can end up with a missing or duplicated export line. Naming can drift between packages if <code>MIGRATION.md</code> left room for choice. Per-module tests cannot see any of this, because each one only looks at its own module. That is why the merge node is a reviewer with rubric items R4 (contract) and R5 (barrel), and why Lesson 15 adds an end-to-end test.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Double diamond: decide what to build, then build it</h2>
+  <p>The <b>double diamond</b> comes from design thinking. The UK Design Council popularised it as two diamonds side by side. The first is about finding the right problem: <i>discover</i> (diverge, look widely) and <i>define</i> (converge on one framing). The second is about building the right solution: <i>develop</i> (diverge, try options) and <i>deliver</i> (converge on the finished thing).</p>
+  <p>For agents it reads like this. The first diamond fans out several explorers, each proposing a different approach, and converges on one plan. The second diamond fans out workers to execute that plan and converges to integrate and verify. The first diamond is Anthropic's parallelization-by-voting pattern applied to plans; the second is an ordinary diamond.</p>
+  <p>The explorers in the first diamond are cheap if you design them that way. Make them read-only planners and cap each proposal at about fifteen lines. They read the code and return a short proposal. They do not port anything. The expensive part, the build, happens once, after the decision.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it · the double diamond</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 300" role="img" aria-label="Double diamond: the lead fans out three strategy planners, converges on a chosen plan, fans out three porter packages, and converges on a reviewer">
+          <text class="g-cap" x="144" y="22" text-anchor="middle">Discover</text>
+          <text class="g-cap" x="288" y="22" text-anchor="middle">Define</text>
+          <text class="g-cap" x="432" y="22" text-anchor="middle">Develop</text>
+          <text class="g-cap" x="576" y="22" text-anchor="middle">Deliver</text>
+          <g class="g-node g-node--orch" data-node="lead"><rect x="20" y="127" width="104" height="46" rx="8"/><text x="72" y="155">Lead</text></g>
+          <g class="g-node g-node--worker" data-node="x1"><rect x="164" y="37" width="104" height="46" rx="8"/><text x="216" y="65">By file</text></g>
+          <g class="g-node g-node--worker" data-node="x2"><rect x="164" y="127" width="104" height="46" rx="8"/><text x="216" y="155">By trap</text></g>
+          <g class="g-node g-node--worker" data-node="x3"><rect x="164" y="217" width="104" height="46" rx="8"/><text x="216" y="245">Test first</text></g>
+          <g class="g-node g-node--orch" data-node="pick"><rect x="308" y="127" width="104" height="46" rx="8"/><text x="360" y="155">Choose plan</text></g>
+          <g class="g-node g-node--worker" data-node="p1"><rect x="452" y="37" width="104" height="46" rx="8"/><text x="504" y="65">Package 1</text></g>
+          <g class="g-node g-node--worker" data-node="p2"><rect x="452" y="127" width="104" height="46" rx="8"/><text x="504" y="155">Package 2</text></g>
+          <g class="g-node g-node--worker" data-node="p3"><rect x="452" y="217" width="104" height="46" rx="8"/><text x="504" y="245">Package 3</text></g>
+          <g class="g-node g-node--check" data-node="rev"><rect x="596" y="127" width="104" height="46" rx="8"/><text x="648" y="155">Reviewer</text></g>
+          <path class="g-edge" data-edge="d1" d="M124 150 C 144 150, 144 60, 164 60"/>
+          <path class="g-edge" data-edge="d2" d="M124 150 L164 150"/>
+          <path class="g-edge" data-edge="d3" d="M124 150 C 144 150, 144 240, 164 240"/>
+          <path class="g-edge" data-edge="d4" d="M268 60 C 288 60, 288 150, 308 150"/>
+          <path class="g-edge" data-edge="d5" d="M268 150 L308 150"/>
+          <path class="g-edge" data-edge="d6" d="M268 240 C 288 240, 288 150, 308 150"/>
+          <path class="g-edge" data-edge="d7" d="M412 150 C 432 150, 432 60, 452 60"/>
+          <path class="g-edge" data-edge="d8" d="M412 150 L452 150"/>
+          <path class="g-edge" data-edge="d9" d="M412 150 C 432 150, 432 240, 452 240"/>
+          <path class="g-edge" data-edge="d10" d="M556 60 C 576 60, 576 150, 596 150"/>
+          <path class="g-edge" data-edge="d11" d="M556 150 L596 150"/>
+          <path class="g-edge" data-edge="d12" d="M556 240 C 576 240, 576 150, 596 150"/>
+          <text class="g-cap" x="216" y="290" text-anchor="middle">diamond 1: choose the approach</text>
+          <text class="g-cap" x="504" y="290" text-anchor="middle">diamond 2: build it</text>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="lead" data-edges="">The lead faces a question it cannot answer by reading one file: what is the best way to port the rest of <code>ops/</code>? Several approaches are plausible, and whichever it picks will be copied into every porter.</li>
+        <li data-on="lead,x1,x2,x3" data-edges="d1,d2,d3">Discover. Three planner calls run in parallel, each with one lens: by file, by trap, test-first. They are read-only and capped at fifteen lines, so this costs three small contexts and no edits.</li>
+        <li data-on="x1,x2,x3,pick" data-edges="d4,d5,d6">Define. Three proposals come back. The lead compares them against fixed criteria: packages independent, traps named per package, verification by <code>scripts/verify.sh</code>. It picks one or merges the best parts.</li>
+        <li data-on="pick" data-edges="">The convergence point. The lead writes the chosen plan to <code>notes/ops-plan.md</code> and stops for your OK. This is the cheapest moment in the whole run to change direction, because nothing has been built.</li>
+        <li data-on="pick,p1,p2,p3" data-edges="d7,d8,d9">Develop. Now the expensive part: porter calls for each package, packages in parallel. Each brief comes from the plan, so all three share one approach.</li>
+        <li data-on="p1,p2,p3,rev" data-edges="d10,d11,d12">Deliver. The reviewer checks all four modules against R1 to R5 and runs <code>python scripts/status.py</code>. One verdict covers the whole build.</li>
+        <li data-on="lead,pick,rev" data-edges="">Count the cost. Compared with a plain diamond, you paid for three planner calls and one pause. You bought a plan that was argued for before anything was built. Whether that was worth it is the subject of Part five.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>When to use a double diamond</h2>
+  <p>Ask two questions, in this order.</p>
+  <p><b>Question 1: Could you write the plan right now?</b> If you know the approach and could brief the workers today, the first diamond has nothing to discover. If people disagree, if the module is a new kind, or if this is your first time at a scale, the approach is uncertain.</p>
+  <p><b>Question 2: Once there is a plan, does the build split into independent pieces?</b> If yes, the second diamond pays off through parallel work. If each piece needs the previous one's output, the build is a chain, whatever you decided in the first diamond.</p>
+
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th></th><th>Build splits into independent pieces</th><th>Build is sequential</th></tr></thead>
+    <tbody>
+      <tr><td><b>Approach known</b></td><td><b>Diamond.</b> The remaining four ops today.</td><td><b>Chain</b>, or one agent. The core wave in Week 1.</td></tr>
+      <tr><td><b>Approach uncertain</b></td><td><b>Double diamond.</b> Choosing how to port 40 ops in Kestrel-240.</td><td><b>Explore, then chain.</b> One exploring diamond, then a sequential build: <code>steps</code>, <code>runner</code>, <code>cli</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">The double diamond needs a yes to both questions: uncertain approach, parallel build.</p>
+
+  <div class="c-note"><p><b>The line to remember.</b> The first diamond buys certainty. The second diamond buys speed. Pay for each one only when you need what it buys.</p></div>
+
+  <p>A useful way to price the first diamond: compare the cost of the explorers with the cost of a wrong approach multiplied by the number of workers that would follow it. For four ops, a wrong approach costs at most four redone ports, and you have seven earlier ops showing that the approach works. The explorers are close to wasted. For Kestrel-240, a wrong approach is copied into a couple of hundred workers before anyone notices. Three read-only explorers are cheap insurance against that. This is why the capstone in Lesson 20 puts a double diamond at the top of the 100-agent design.</p>
+  <p>Signs that the first diamond is overkill: <code>MIGRATION.md</code> already names the traps, your role files have worked several times on modules like these, or you can predict what the explorers will say. Signs that you need it: your team argues about the approach, the module is unlike anything ported so far, or the build is big enough that a wrong start is expensive to undo.</p>
+
+  <h2><span class="h2num">Part six</span>Tree and cycle</h2>
+  <p>A <b>tree</b> (or hierarchy) is orchestrators of orchestrators. The top lead talks to a few sub-leads, and each sub-lead runs its own workers. You need one when a single coordinator cannot hold all the reports. A useful span of control is about five to ten direct reports. At 240 modules, one lead reading 240 reports is hopeless, so Lesson 17 gives each package (<code>core</code>, <code>ops</code>, <code>io</code> and so on) its own sub-lead that sends up a five-line summary.</p>
+  <p>A <b>cycle</b> is an edge that loops back: review, then fix, then review again. Anthropic calls it evaluator-optimizer. Use it when quality needs iteration against a bar you can check, such as the reviewer's rubric. A cycle must have an exit: a pass condition and a maximum number of rounds. Lesson 10 builds one.</p>
+  <p>Shapes combine. Every node in a diamond can contain a cycle. A tree's leaves are usually diamonds. The general form, where any node can depend on any earlier one, is a <b>DAG</b> (directed acyclic graph), and Lesson 11 draws Kestrel's.</p>
+
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Shape</th><th>Use when</th><th>Kestrel example</th><th>Main risk</th></tr></thead>
+    <tbody>
+      <tr><td>Chain</td><td>Each step needs the previous step's output</td><td><code>mathutil → color → image</code>; planner → porter → reviewer for one module</td><td>Slow; an early error flows downstream</td></tr>
+      <tr><td>Diamond</td><td>Approach known, pieces independent, merge cheap</td><td>Lab 06; the four remaining ops</td><td>Bad split, merge collisions, one heavy branch</td></tr>
+      <tr><td>Double diamond</td><td>Approach uncertain and the build is parallel</td><td>Choosing a strategy for 40 ops in Kestrel-240</td><td>Paying for exploration you did not need</td></tr>
+      <tr><td>Tree</td><td>Too many reports for one coordinator (span about 5–10)</td><td>Per-package sub-leads for Kestrel-240</td><td>Summaries lose detail at each level</td></tr>
+      <tr><td>Cycle</td><td>Quality needs iteration against a checkable bar</td><td>Porter ↔ reviewer on <code>ops/pad.py</code></td><td>Ping-pong with no exit; needs a round cap</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">The decision guide. Start at the top row and move down only when the simpler shape fails a test.</p>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="diamond">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call · 1</span></div>
+    <div class="ex__body">
+      <p>Kestrel-240 has another batch of simple pixel ops to port.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>Six ops, each depending only on <code>core/</code>, which is ported.</li><li>They look like the ops you have already ported: per-pixel loops, some rounding.</li><li><code>MIGRATION.md</code> lists T1 and T2, and <code>porter.md</code> has worked on every op so far.</li><li>A colleague suggests "three strategists first, to be safe".</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="chain">Chain</button>
+        <button class="vbtn" data-pick="diamond">Diamond</button>
+        <button class="vbtn" data-pick="double">Double diamond</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="chain"><span class="verdict-tag" data-v="fail">Not quite</span><p>Nothing here is sequential. The six ops are independent, so a chain leaves easy parallelism unused.</p></div>
+        <div class="vfb" data-for="diamond"><span class="verdict-tag" data-v="pass">Right call</span><p>Question 1 gets a clear yes: you could write the briefs now. Question 2 is also yes. Known approach plus independent pieces is a diamond. Run the lead's split, porters in parallel, and the reviewer as merger.</p></div>
+        <div class="vfb" data-for="double"><span class="verdict-tag" data-v="fail">Overkill</span><p>The strategists would rediscover what <code>MIGRATION.md</code> and seven successful ports already tell you. You would pay for three explorers and a pause to buy certainty you already have.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="double">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call · 2</span></div>
+    <div class="ex__body">
+      <p>Planning the 40 filter ops in Kestrel-240.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>The team disagrees. One camp wants porters to hand-port each op. The other wants one agent to write a script that translates Python to TypeScript mechanically, with porters cleaning up the output.</li><li>Nobody has tried the script approach on Kestrel yet.</li><li>Whichever approach wins, the 40 ops are independent and depend only on ported modules.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="diamond">Diamond</button>
+        <button class="vbtn" data-pick="double">Double diamond</button>
+        <button class="vbtn" data-pick="tree">Tree</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="diamond"><span class="verdict-tag" data-v="fail">Not quite</span><p>A diamond needs a known approach so the splitter can brief workers. Here the approach is the open question, and a wrong pick would be copied into 40 workers.</p></div>
+        <div class="vfb" data-for="double"><span class="verdict-tag" data-v="pass">Right call</span><p>Both questions point here. The approach is uncertain, so explore: have read-only planners each make the case for one approach, maybe with a small trial on two ops, then converge on a plan. The build splits 40 ways, so fan out again and converge on review.</p></div>
+        <div class="vfb" data-for="tree"><span class="verdict-tag" data-v="fail">Not yet</span><p>Forty reports may eventually need sub-leads, and the build half could become a tree. That is a question about span of control. The first problem is choosing the approach, which a tree does not address.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="explore">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call · 3</span></div>
+    <div class="ex__body">
+      <p>Next up in the starter: <code>pipeline/steps</code>, <code>pipeline/runner</code> and <code>cli</code>.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li><code>runner</code> imports <code>steps</code>, and <code>cli</code> imports <code>runner</code>.</li><li>You are unsure how to port the step registry in <code>steps.py</code>: a map from names to functions, or a <code>switch</code>.</li><li>The choice affects how <code>runner</code> calls steps.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="double">Double diamond</button>
+        <button class="vbtn" data-pick="explore">Explore, then chain</button>
+        <button class="vbtn" data-pick="diamond">Diamond</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="double"><span class="verdict-tag" data-v="fail">Half right</span><p>The first diamond fits, because the approach is uncertain. The second does not: the three modules depend on each other, so there is nothing to fan out. Three parallel porters would wait on each other.</p></div>
+        <div class="vfb" data-for="explore"><span class="verdict-tag" data-v="pass">Right call</span><p>Uncertain approach, sequential build. Let two or three planners argue the registry design, converge on one, then port <code>steps</code>, <code>runner</code> and <code>cli</code> in order. This is the bottom-right cell of the table.</p></div>
+        <div class="vfb" data-for="diamond"><span class="verdict-tag" data-v="fail">Not quite</span><p>A diamond needs both a known approach and independent pieces, and this has neither.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Which single fact most strongly justifies adding the first diamond?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">There are many modules to port</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">You cannot yet say which approach is right, and the chosen one will be copied into many workers</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The per-module tests are weak and miss real bugs</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">You have budget left over this week</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">That justifies the second diamond</div><p>Many modules means a parallel build. It says nothing about whether you know how to build them. With a known approach, many modules call for a plain diamond, or a tree if the reports pile up.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>Uncertainty about the approach is what the first diamond resolves, and multiplication is what makes resolving it worth paying for. Either one alone is weaker: a known approach needs no exploration, and an uncertain choice that affects one module can be fixed by redoing one module.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">That calls for a cycle or a stronger check</div><p>Weak tests are a verification problem. Fix them with a reviewer loop (Lesson 10) or an end-to-end test (Lesson 15). Exploring strategies will not make the tests stronger.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Spare budget is a reason to be able to afford a shape. It is not a reason the shape helps. A first diamond on a settled question buys nothing.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-09">
+    <div class="lab__head">
+      <span class="label">Lab 09 · In Claude Code</span>
+      <span class="lab__meta">~25 min · est. $2.00–$5.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run a full double diamond by prompt: three strategies for the remaining ops, one chosen plan, parallel porters, one review. Then judge whether the first diamond paid for itself.</p>
+      <ol class="lab__steps">
+        <li><p>Check what is left. You should see <code>rotate</code>, <code>resize</code>, <code>contrast</code>, <code>histogram</code> and <code>pad</code> among the ready modules. <code>pad</code> is for Lesson 10.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Start the lead on Opus. Your three role files from Lesson 08 set the other models.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+        </li>
+        <li><p>Run the first diamond. The prompt stops at the convergence point.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>We will run a double diamond on kestrel/ops/rotate.py, resize.py, contrast.py and histogram.py. Leave ops/pad.py alone.
+
+Diamond 1, diverge: run three planner agent calls in parallel. Give each one lens:
+  A) by file: one package per module, ordered by size
+  B) by trap: group modules by the MIGRATION.md trap they hit
+  C) test-first: port all four test files first, then the code
+Each must propose exactly 3 work packages and reply in at most 15 lines.
+
+Diamond 1, converge: compare the three proposals on these criteria:
+  - packages are independent of each other
+  - each package names the traps that apply
+  - every module is verified with scripts/verify.sh
+Pick one or merge the best parts. Write the chosen plan to notes/ops-plan.md with the 3 packages, the traps per package, and 3 lines on why you chose it.
+
+Then stop, show me notes/ops-plan.md, and wait for my OK.</code></pre></div>
+        </li>
+        <li><p>Read the plan. If you disagree, say so now; this is the cheapest moment to change course. Then run the second diamond.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>OK. Diamond 2, diverge: for each package in notes/ops-plan.md, run the porter agent once per module in that package. Run the packages in parallel. Inside a package, run modules in order and pass each porter the TRAPS and NOTES lines from the previous porter in that package.
+
+Diamond 2, converge: use the reviewer agent on all four modules. If any module gets FAIL, send its FINDINGS verbatim to a new porter call for that module, then review that module again, at most twice.
+
+Finally, append any new trap to Known traps in MIGRATION.md, run python scripts/status.py, and give me a table: module, package, verify runs, reviewer verdict.</code></pre></div>
+        </li>
+        <li><p>Ask the lead to judge its own first diamond, then check the cost.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Looking back: did the three strategies differ in any way that changed the final plan? If you had skipped diamond 1 and used a plain diamond, what would have gone differently? Answer in 5 lines.</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Three short proposals that disagree mainly on grouping. The by-trap planner will likely pair <code>rotate</code> with <code>resize</code> because both use <code>floor_div</code> (T2). The chosen plan probably takes that grouping, and inside that package the second porter starts with the first one's T2 notes. Four modules end up passing, with a reviewer verdict for each and possibly one FAIL round. The lead's look back will often admit that with T2 already in <code>MIGRATION.md</code>, diamond 1 changed little. That is the right lesson for four ops. Keep the number from <code>/usage</code>; you now know roughly what three read-only explorers cost compared with the build.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Rerun only diamond 1 on a question that is genuinely open: "How should pipeline/steps.py's step registry be ported so that pipeline/runner.py stays simple?" Do not build anything. Compare how much the three proposals differ this time. That difference is the signal that the first diamond is earning its cost.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Pick the shape from two questions. Is the approach uncertain? Does the build split? Two yeses make a double diamond. One yes on the build side makes a diamond. Use a chain when order is forced, a tree when reports overflow one coordinator, and a cycle when quality needs rounds against a checkable bar.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 10 · Loops between agents. You turn the cycle into an engineered loop with a rubric, a round cap and a rule for when to stop and escalate.</div>
+</section>
