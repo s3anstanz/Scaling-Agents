@@ -191,7 +191,7 @@ git init -q &amp;&amp; git add -A &amp;&amp; git commit -qm "lab 14 start" &amp;
           <div class="cmd"><pre><code>claude --model opus</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>Use four porter agents in parallel, one each for kestrel/ops/invert.py, kestrel/ops/flip.py, kestrel/ops/contrast.py and kestrel/ops/brightness.py. Each porter appends its module's export line to ts/src/index.ts as usual, and when scripts/verify.sh passes it commits everything it changed on its worktree branch. When all four are done, run `git branch` and merge the four branches into the current branch one at a time with `git merge --no-edit`. Stop at the first merge conflict, show me the conflicting hunk, and do not resolve it.</code></pre></div>
         </li>
-        <li><p>Look at the conflict, then go back to the start. List leftover worktrees and remove each one under <code>.claude/worktrees/</code> with <code>git worktree remove --force &lt;path&gt;</code>.</p>
+        <li><p>Look at the conflict, then go back to the start. List leftover worktrees and remove each one under <code>.claude/worktrees/</code> with <code>git worktree remove --force &lt;path&gt;</code>, then delete the four porter branches that <code>git branch</code> lists with <code>git branch -D &lt;name&gt;</code>.</p>
           <div class="cmd"><pre><code>git merge --abort
 git reset --hard lab14-start
 git worktree list</code></pre></div>
