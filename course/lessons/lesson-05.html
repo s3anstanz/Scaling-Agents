@@ -179,7 +179,7 @@ claude -p "Port kestrel/core/image.py to TypeScript at ts/src/core/image.ts and 
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/image.json
 echo "image $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
 python scripts/runinfo.py notes/runs/image.json
@@ -194,7 +194,7 @@ claude -p "Port kestrel/ops/blur.py to TypeScript at ts/src/ops/blur.ts and its 
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/blur.json
 echo "blur $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
 python scripts/runinfo.py notes/runs/blur.json
@@ -221,7 +221,7 @@ for line in (RUNS / "seconds.txt").read_text().splitlines():
     cost_cell = f"{cost:.2f}" if cost is not None else "from /usage"
     rows.append(
         f"| {name} | {run.get('num_turns', 'n/a')} | {cost_cell} "
-        f"| {int(seconds) / 60:.1f} | {run.get('subtype', 'interactive')} |"
+        f"| {int(seconds) / 60:.1f} | {'error' if run.get('is_error') else run.get('subtype', 'interactive')} |"
     )
 
 table = "\n".join(rows)

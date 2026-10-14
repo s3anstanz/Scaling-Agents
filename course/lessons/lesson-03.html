@@ -116,10 +116,10 @@ claude --bare -p "Port kestrel/core/color.py to TypeScript at ts/src/core/color.
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/color-bare.json
 echo "color-bare $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt</code></pre></div>
-          <div class="c-note"><p><b>If bare mode will not start.</b> Because <code>--bare</code> skips more than <code>CLAUDE.md</code>, some login setups do not work with it. In that case run <code>mv CLAUDE.md CLAUDE.md.off</code>, run the same command without <code>--bare</code>, and run <code>mv CLAUDE.md.off CLAUDE.md</code> before step 4.</p></div>
+          <div class="c-note"><p><b>If bare mode will not start.</b> Because <code>--bare</code> skips more than <code>CLAUDE.md</code>, it may not use your claude.ai login. If step 3's runinfo shows <code>is_error: True</code>, one turn and zero cost (the JSON result says <i>Not logged in</i>), run <code>mv CLAUDE.md CLAUDE.md.off</code>, run the same command without <code>--bare</code>, and run <code>mv CLAUDE.md.off CLAUDE.md</code> before step 4.</p></div>
         </li>
         <li><p>Inspect the bare result and keep a copy of it.</p>
           <div class="cmd"><pre><code>python scripts/runinfo.py notes/runs/color-bare.json
@@ -138,7 +138,7 @@ claude -p "Port kestrel/core/color.py to TypeScript at ts/src/core/color.ts and 
   --max-turns 20 --max-budget-usd 1 \
   --output-format json \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
   &gt; notes/runs/color.json
 echo "color $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt</code></pre></div>
         </li>
