@@ -139,7 +139,7 @@
       <p class="lab__goal"><b>Goal.</b> Port all 24 starter modules with a fleet of cheap workers, measure cost per green module and wall-clock, then extrapolate to 240 modules at 10, 25 and 100 agents.</p>
       <ol class="lab__steps">
         <li><p>Reset the port in <code>kestrel-scale/</code>.</p>
-          <div class="cmd"><pre><code>cd kestrel-scale
+          <div class="cmd"><pre><code>source .venv/bin/activate
 git add -A &amp;&amp; git commit -qm "before lab 19" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
         </li>

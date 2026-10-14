@@ -72,8 +72,8 @@
         </svg>
       </div>
       <ol class="stepper__frames">
-        <li data-on="find" data-edges="">A scout agent runs <code>scripts/status.py --next</code> and gets the 14 modules of wave L3. Today, unknown to anyone, <code>image.ts</code> has a broken pixel accessor.</li>
-        <li data-on="find,c1,c2,c3" data-edges="e1,e2,e3">Three canaries start: <code>blur</code>, <code>crop</code>, <code>flip</code>. The other eleven wait. Each canary first checks status, so a rerun would skip anything already green.</li>
+        <li data-on="find" data-edges="">A scout agent runs <code>scripts/status.py --next</code> and gets the 14 modules of wave L3. Today, unknown to anyone, <code>image.ts</code> has a constructor that throws.</li>
+        <li data-on="find,c1,c2,c3" data-edges="e1,e2,e3">Three canaries start: <code>io/pgm</code>, <code>io/ppm</code>, <code>ops/blur</code>. The other eleven wait. Each canary first checks status, so a rerun would skip anything already green.</li>
         <li data-on="c1" data-edges="r1"><code>blur</code> fails <code>verify.sh</code> and does not spot the cause. It gets a retry with the failing line pasted in, then a second. Still red after the cap of two.</li>
         <li data-on="c2,c3" data-edges=""><code>crop</code> and <code>flip</code> trace their failures into <code>image.ts</code>. Following the rules, they return <code>blocked</code> without editing it. Blocked modules get no retries.</li>
         <li data-on="c1,c2,c3,breaker" data-edges="e4,e5,e6">The breaker counts three red out of three. 100% is far above the 30% threshold.</li>
@@ -172,7 +172,7 @@
   <div class="ex wide c-mcq" data-component="mcq">
     <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
     <div class="ex__body">
-      <p>All three canaries come back red. Two say <code>blocked</code> with the error "<code>img.getPixel is not a function</code>" from <code>ts/src/core/image.ts</code>. What should the workflow do next?</p>
+      <p>All three canaries come back red. Two say <code>blocked</code> with the error "<code>image.ts sabotaged for Lab 18</code>" from <code>ts/src/core/image.ts</code>. What should the workflow do next?</p>
       <ul class="c-mcq__opts">
         <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Retry each canary twice more, with the error in the prompt</span><span class="mk" aria-hidden="true"></span></button></li>
         <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Start the other eleven; three is too small a sample to judge</span><span class="mk" aria-hidden="true"></span></button></li>
@@ -219,7 +219,7 @@
       <p class="lab__goal"><b>Goal.</b> Break a shared dependency on purpose and watch the breaker stop the 14-module wave after three canaries, then fix it and watch the same workflow finish the wave.</p>
       <ol class="lab__steps">
         <li><p>In <code>kestrel-scale/</code>, reset the port to the <code>fresh</code> tag, as in Lab 17.</p>
-          <div class="cmd"><pre><code>cd kestrel-scale
+          <div class="cmd"><pre><code>source .venv/bin/activate
 git add -A &amp;&amp; git commit -qm "before lab 18" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
         </li>
@@ -227,13 +227,13 @@ git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</
           <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
         </li>
-        <li><p>In another terminal, confirm that <code>image</code> is green and checkpoint it.</p>
+        <li><p>In another terminal, in <code>kestrel-scale/</code> with <code>source .venv/bin/activate</code> run first, confirm that <code>image</code> is green and checkpoint it.</p>
           <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/image.py; echo "exit $?"
 git add -A &amp;&amp; git commit -qm "lab 18: L0-L2 green"</code></pre></div>
         </li>
         <li><p>Now sabotage <code>image.ts</code>. Back in Claude Code:</p>
-          <div class="cmd" data-kind="prompt"><pre><code>For a failure-handling exercise: in ts/src/core/image.ts, rename the method
-that reads a single pixel by appending Broken to its name. Change nothing else,
+          <div class="cmd" data-kind="prompt"><pre><code>For a failure-handling exercise: in ts/src/core/image.ts, make the first statement
+of the Image constructor throw new Error("image.ts sabotaged for Lab 18"). Change nothing else,
 do not update callers or tests, and do not try to fix anything afterwards.</code></pre></div>
           <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/image.py; echo "exit $?"</code></pre></div>
         </li>
@@ -310,13 +310,13 @@ log(`${passing.size}/${wave.length} green, ${wave.length - results.length} never
 git checkout -- ts/src/core/image.ts
 scripts/verify.sh kestrel/core/image.py; echo "exit $?"</code></pre></div>
         </li>
-        <li><p>Run the same workflow again. Canaries that went red will be ported again; anything that somehow went green is skipped.</p>
+        <li><p>Run the same workflow again. Its Find step uses <code>status.py --next</code>, which leaves out any module that already has a TS file, so canaries from the first run are not redone; the <code>status.py</code> check below shows whether they pass now that <code>image.ts</code> is restored.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/port-guarded</code></pre></div>
           <div class="cmd"><pre><code>python scripts/status.py
 git add -A &amp;&amp; git commit -qm "lab 18: L3 via port-guarded"</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>On the sabotaged run, three canaries start and the log reports a tripped breaker naming <code>image.ts</code>, with about eleven modules never started. Canaries that report <code>failed</code> rather than <code>blocked</code> get up to two retries each, so you may count up to nine port agents; that is still far fewer than 14 porters each burning a full budget. <code>git diff</code> on <code>image.ts</code> should show only your sabotage. On the second run the canaries pass, the breaker stays closed, and the full wave runs.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>On the sabotaged run, three canaries start and the log reports a tripped breaker naming <code>image.ts</code>, with about eleven modules never started. Canaries that report <code>failed</code> rather than <code>blocked</code> get up to two retries each, so you may count up to nine port agents; that is still far fewer than 14 porters each burning a full budget. <code>git diff</code> on <code>image.ts</code> should show only your sabotage. On the second run the next three ready modules act as canaries and pass, the breaker stays closed, and the rest of the wave runs. A first-run canary that stopped as <code>blocked</code> before writing a file is still ready, so it joins this run.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Ask Claude for a loop-until-dry workflow: each round, four <code>haiku</code> agents scan a quarter of <code>kestrel/</code> for Python-versus-JavaScript differences missing from <code>MIGRATION.md</code>; one writer agent merges new ones; stop after two consecutive rounds with nothing new or five rounds total. Compare what it finds with the traps your porters reported.</p></div>
     </div>
   </div>
