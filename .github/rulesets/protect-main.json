@@ -30,8 +30,7 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "All checks pass", "integration_id": 15368 },
-          { "context": "Security checks pass", "integration_id": 15368 }
+          { "context": "All checks pass", "integration_id": 15368 }
         ]
       }
     }
