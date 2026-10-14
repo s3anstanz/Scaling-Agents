@@ -44,7 +44,7 @@ The last line should end with `142 passed`. Run `source .venv/bin/activate` agai
 
 ### 4. Open the course and do Lesson 1
 
-[**Open the course**](https://claude.ai/artifact/MEMDxrrDeJUpgEHdfCJDf5) and read Lesson 1. It ends with Lab 01. Its first four steps are the setup you just did, so start at step 5.
+[**Open the course**](https://claude.ai/artifact/MEMDxrrDeJUpgEHdfCJDf5) and read Lesson 1. It ends with Lab 01. Its first step is the setup you just did, so start at step 2.
 
 ## How the course works
 
