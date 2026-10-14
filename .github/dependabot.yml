@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /kestrel-starter/ts
+    schedule:
+      interval: weekly
+    groups:
+      starter-toolchain:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /course
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

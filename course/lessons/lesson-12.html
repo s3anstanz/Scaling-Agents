@@ -1,0 +1,199 @@
+<section class="lesson" id="lesson-12" data-week="3" data-title="Handoffs, contracts and shared state" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 12</span>
+    <span class="meta">Week 3 · Systems</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="10-25">10–25 agents</span>
+  </div>
+  <h1>Handoffs, contracts and shared state</h1>
+  <p class="lesson__deck">When a worker finishes, a paragraph of prose is all that comes back. At ten agents you need every report in the same shape, and you need a source of truth that does not depend on any agent's word.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The lossy handoff</h2>
+  <p>A <b>handoff</b> is the moment work passes from one agent to another. In Claude Code, a subagent's handoff to its parent is its final report and nothing else. The parent never sees the files the subagent read, the commands it ran, or the test it almost skipped. Lesson 6 called this lossy. In Lesson 11 you felt it: the orchestrator read several porter reports, each written in a slightly different style.</p>
+  <p>Your Week 2 porter already answers in six labelled lines (MODULE, VERIFY, RUNS, TRAPS, FILES, NOTES), which helps a great deal. It is still prose that a model writes and a model reads, and nothing checks it. Here is the kind of report you get without even that much structure, and it shows what goes wrong at scale.</p>
+  <div class="quote quote--agent"><div class="quote__from">Agent report · porter for ops/resize</div><p>Ported resize to TypeScript. The tests look good now. I had to adjust the nearest-neighbour index math a little because of a division difference, and there is one edge case with odd sizes that I simplified. Everything should be working.</p></div>
+  <p>Read it as the orchestrator would. Did <code>scripts/verify.sh</code> exit 0, or did the agent run only the TypeScript tests? "Looks good" and "should be working" are beliefs. The division difference is almost certainly the T2 floor-division trap, already in <code>MIGRATION.md</code>, so is this a new trap or an old one? And "simplified an edge case" might mean a test was weakened. With one report you can ask a follow-up question. With fifteen you cannot, and every vague sentence turns into a decision the orchestrator makes on a guess.</p>
+  <p>The handoff has three problems. Its <b>shape</b> varies, so the reader has to interpret it. It mixes <b>claims</b> with facts, and nothing marks which is which. And it buries <b>details</b>, so the one sentence that matters sits in the middle of a paragraph.</p>
+
+  <h2><span class="h2num">Part two</span>A contract is a schema</h2>
+  <p>A <b>contract</b> is an agreement on the exact shape of a handoff, fixed before the work starts. For agents, the simplest contract is a JSON schema the final report must satisfy. Headless Claude Code supports this directly. Run <code>claude -p</code> with <code>--output-format json</code> and <code>--json-schema '&lt;schema&gt;'</code>, and the JSON it prints includes a <code>structured_output</code> field that matches your schema. The same envelope also carries <code>total_cost_usd</code> and <code>num_turns</code>, so you get cost and effort without asking the agent to report them.</p>
+  <p>Keep the schema small. Every field should be something the orchestrator will act on. Here is the one this lesson uses for headless porters. It is your six-line report made strict: MODULE becomes <code>module</code>, VERIFY becomes <code>status</code> and <code>tests_passed</code>, TRAPS becomes <code>traps_found</code>, and NOTES stays <code>notes</code>. RUNS and FILES you can measure yourself from the JSON envelope and from git.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>porter result schema (passed to --json-schema)</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><div class="cl"><span class="ln">1</span><pre>{</pre></div></li>
+        <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">"type"</span>: <span class="tk-str">"object"</span>,</pre></div></li>
+        <li><div class="cl"><span class="ln">3</span><pre>  <span class="tk-key">"properties"</span>: {</pre></div></li>
+        <li><button class="cl" data-note="n4"><span class="ln">4</span><pre>    <span class="tk-key">"module"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"string"</span> },</pre></button></li>
+        <li><button class="cl" data-note="n5"><span class="ln">5</span><pre>    <span class="tk-key">"status"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"string"</span>, <span class="tk-key">"enum"</span>: [<span class="tk-str">"ported"</span>, <span class="tk-str">"failed"</span>, <span class="tk-str">"blocked"</span>] },</pre></button></li>
+        <li><button class="cl" data-note="n6"><span class="ln">6</span><pre>    <span class="tk-key">"tests_passed"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"boolean"</span> },</pre></button></li>
+        <li><button class="cl" data-note="n7"><span class="ln">7</span><pre>    <span class="tk-key">"traps_found"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"array"</span>, <span class="tk-key">"items"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"string"</span> } },</pre></button></li>
+        <li><button class="cl" data-note="n8"><span class="ln">8</span><pre>    <span class="tk-key">"notes"</span>: { <span class="tk-key">"type"</span>: <span class="tk-str">"string"</span> }</pre></button></li>
+        <li><div class="cl"><span class="ln">9</span><pre>  },</pre></div></li>
+        <li><button class="cl" data-note="n10"><span class="ln">10</span><pre>  <span class="tk-key">"required"</span>: [<span class="tk-str">"module"</span>, <span class="tk-str">"status"</span>, <span class="tk-str">"tests_passed"</span>, <span class="tk-str">"traps_found"</span>, <span class="tk-str">"notes"</span>],</pre></button></li>
+        <li><button class="cl" data-note="n11"><span class="ln">11</span><pre>  <span class="tk-key">"additionalProperties"</span>: <span class="tk-kw">false</span></pre></button></li>
+        <li><div class="cl"><span class="ln">12</span><pre>}</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line.</p></div>
+        <div class="cnote" data-note="n4"><div class="label">Line 4 · module</div><p>The key you join on. It lets you match each result to a row of <code>python scripts/status.py --json</code> without parsing prose. Ask for the Python path, such as <code>kestrel/ops/resize.py</code>, so it matches what <code>verify.sh</code> takes.</p></div>
+        <div class="cnote" data-note="n5"><div class="label">Line 5 · status as an enum</div><p>Three values, each with its own next action. <code>ported</code> goes to verification. <code>failed</code> goes to retry or a stronger model. <code>blocked</code> means a dependency is wrong or missing, so the fix is somewhere else and a retry would waste money. An enum stops the agent from inventing a fourth state like "mostly done".</p></div>
+        <div class="cnote" data-note="n6"><div class="label">Line 6 · tests_passed</div><p>A claim, kept separate from status on purpose. A porter can say <code>ported</code> with <code>tests_passed: false</code> when it ran out of turns, which is useful to know. You will still check this field against the repo, because a claim made at minute 4 can be false by minute 9.</p></div>
+        <div class="cnote" data-note="n7"><div class="label">Line 7 · traps_found</div><p>The porter reports traps here instead of writing them into <code>MIGRATION.md</code>. That keeps the shared file under one writer (Part four). An empty array is a real answer, and the orchestrator can tell it apart from "forgot to mention".</p></div>
+        <div class="cnote" data-note="n8"><div class="label">Line 8 · notes</div><p>One free-text field for anything the enum cannot hold, such as "weakened the odd-size test". Keep it last and keep it optional in spirit. If you find yourself parsing notes, promote that thing to its own field.</p></div>
+        <div class="cnote" data-note="n10"><div class="label">Line 10 · required</div><p>Every field is required, so a result with a missing field fails the contract instead of slipping through as half an answer.</p></div>
+        <div class="cnote" data-note="n11"><div class="label">Line 11 · no extra fields</div><p>Closes the shape. Without it, agents add helpful extras like <code>confidence</code> or <code>summary</code>, and each run's output drifts a little from the last.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <p>The contract is half of the handoff. The other half is the instruction that tells the porter what each field means. "Set <code>tests_passed</code> to true only if <code>scripts/verify.sh</code> exited 0 on your last run" is a definition. "Report whether tests pass" invites the agent to decide what passing means.</p>
+
+  <h2><span class="h2num">Part three</span>Claims are not facts</h2>
+  <p>Even a perfect contract carries claims. An agent's <code>tests_passed: true</code> means the agent believes the tests passed when it last looked. You need a separate measurement of what is true now.</p>
+  <p>Kestrel already has one. <code>scripts/status.py</code> builds its table from the repo itself: does the TypeScript file exist, does its test exist, does the test pass. It never reads an agent's report. That makes it a <b>single source of truth</b>, a place whose answer you trust over every other source. It is also <b>derived state</b>: computed fresh from the files each time, so it cannot go stale the way a hand-kept tracker does.</p>
+  <p>The orchestrator's job after a parallel run is <b>reconciliation</b>: put each claim next to the measurement and look at the disagreements. When they disagree, believe the repo. Then ask why they disagree, because the answer tells you something about your system.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Four porters ran in parallel in the same folder. All four return <code>status: "ported"</code> and <code>tests_passed: true</code>. Ten seconds later, <code>status.py</code> shows only three of the four passing. No agent lied. How can this happen?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Each claim was true at the moment it was made. Then another agent changed something they share. The likeliest culprit in Kestrel is <code>ts/src/index.ts</code>, the barrel file every porter edits: porter B rewrites the file from a stale read and drops porter A's export line, or leaves it half-edited while A's final test run imports it. Engineers call this a time-of-check versus time-of-use gap. It is why reconciliation runs after everyone has finished, against the repo, and never trusts a report on its own.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Shared state: the blackboard and the single writer</h2>
+  <p>So far the porters have never talked to each other. They share information by leaving it in places others can read: the code in <code>ts/src/</code>, the rules in <code>MIGRATION.md</code>, the results in <code>results/</code>. This is the <b>blackboard pattern</b>. Agents read from and write to a shared surface, and a coordinator reads the surface. It is cheap, because nobody sends messages, and it is easy to inspect, because the state is just files you can open.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 290" role="img" aria-label="Four porters write code into the repo and results into results/*.json; status.py measures the repo; a reconcile step compares measurement with claims">
+      <g class="g-node g-node--worker" data-node="p1"><rect x="20" y="20" width="120" height="44" rx="8"/><text x="80" y="47">porter 1</text></g>
+      <g class="g-node g-node--worker" data-node="p2"><rect x="20" y="85" width="120" height="44" rx="8"/><text x="80" y="112">porter 2</text></g>
+      <g class="g-node g-node--worker" data-node="p3"><rect x="20" y="150" width="120" height="44" rx="8"/><text x="80" y="177">porter 3</text></g>
+      <g class="g-node g-node--worker" data-node="p4"><rect x="20" y="215" width="120" height="44" rx="8"/><text x="80" y="242">porter 4</text></g>
+      <g class="g-node g-node--data" data-node="repo"><rect x="260" y="60" width="140" height="44" rx="8"/><text x="330" y="87">ts/ repo files</text></g>
+      <g class="g-node g-node--data" data-node="results"><rect x="260" y="170" width="140" height="44" rx="8"/><text x="330" y="197">results/*.json</text></g>
+      <g class="g-node g-node--check" data-node="status"><rect x="440" y="60" width="140" height="44" rx="8"/><text x="510" y="87">status.py</text></g>
+      <g class="g-node g-node--orch" data-node="recon"><rect x="600" y="115" width="110" height="44" rx="8"/><text x="655" y="142">Reconcile</text></g>
+      <path class="g-edge" d="M140 42 L260 76"/>
+      <path class="g-edge" d="M140 107 L260 84"/>
+      <path class="g-edge" d="M140 172 L260 90"/>
+      <path class="g-edge" d="M140 237 L260 98"/>
+      <path class="g-edge g-edge--faint" d="M140 46 L260 178"/>
+      <path class="g-edge g-edge--faint" d="M140 111 L260 186"/>
+      <path class="g-edge g-edge--faint" d="M140 176 L260 194"/>
+      <path class="g-edge g-edge--faint" d="M140 241 L260 202"/>
+      <path class="g-edge" d="M400 82 L440 82"/>
+      <path class="g-edge" d="M580 82 L620 115"/>
+      <path class="g-edge" d="M400 192 L600 148"/>
+      <text class="g-cap" x="330" y="125" text-anchor="middle">what is true</text>
+      <text class="g-cap" x="330" y="236" text-anchor="middle">what agents claim</text>
+    </svg>
+    <figcaption>The blackboard. Porters never message each other or the reconciler. Each writes code into the repo and one result file of its own. <code>status.py</code> measures the repo, and the reconcile step puts measurement beside claim.</figcaption>
+  </figure>
+
+  <p>The blackboard has one serious weakness. Two writers can change the same file at the same time. Agent A reads <code>MIGRATION.md</code>, agent B reads it, A appends a trap and saves, B appends a different trap and saves from its older copy, and A's trap is gone. This is a <b>lost update</b>.</p>
+  <p>The fix is the <b>single-writer rule</b>: every shared file has exactly one agent allowed to write it. Apply it to Kestrel like this.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Shared thing</th><th>Single writer</th><th>Everyone else</th></tr></thead>
+      <tbody>
+        <tr><td><code>ts/src/ops/resize.ts</code> and its test</td><td>the resize porter</td><td>reads only</td></tr>
+        <tr><td><code>MIGRATION.md</code> Known traps</td><td>the orchestrator</td><td>report traps in <code>traps_found</code></td></tr>
+        <tr><td><code>results/&lt;module&gt;.json</code></td><td>that module's run (one file each)</td><td>reads only</td></tr>
+        <tr><td><code>ts/src/index.ts</code> barrel</td><td>nobody yet</td><td>this lab leaves it open on purpose; Lesson 14 fixes it</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">One writer per file. Notice the <code>results/</code> trick: instead of one shared results file, each writer gets its own, so there is nothing to collide on.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Running in parallel, the <code>resize</code> and <code>rotate</code> porters both find the same new trap, one that is not in Known traps yet. What should happen to <code>MIGRATION.md</code>?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Each porter appends the trap as soon as it finds it, so the knowledge is saved early.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">Both list it in <code>traps_found</code>; the orchestrator removes the duplicate and appends it once.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The two porters message each other and agree which one writes it.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Nobody writes it; each porter already handled the trap in its own module.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Two parallel writers on one file is the lost-update setup. Best case you get the trap twice in slightly different words. Worst case one append erases the other.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>One writer, structured input. The orchestrator sees both reports side by side, which is also the only place where you can notice that two modules hit the same trap. That is a hint it belongs in the rules every future porter reads.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Subagents cannot message each other at all; only the final report goes to the parent. Even in agent teams (Lesson 13), negotiating every shared write costs a round of messages to avoid a problem a single writer avoids for free.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>The next porter that hits the same trap, perhaps on <code>analysis/edges</code>, starts from zero and may get it wrong. Recording traps is how a team gets smarter between waves.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>Parallel headless runs are plain shell</h2>
+  <p>So far your parallel agents were subagents inside one session. You can also run several separate headless sessions at once. Claude Code has no special feature for this. It is ordinary shell: put <code>&amp;</code> after each <code>claude -p</code> command to run it in the background, then <code>wait</code> for all of them, or use <code>xargs -P</code>. Each session has its own context and its own budget. They share only the filesystem.</p>
+  <p>That makes headless runs a clean fit for contracts. Each run prints one JSON result, which you redirect into its own file. Cap each run with <code>--max-turns</code> and <code>--max-budget-usd</code>. The budget is a client-side estimate and can overshoot by one step, so treat it as a guard rail with a little slack.</p>
+  <p>Sharing only the filesystem is also the danger. Four sessions in one folder are four writers. They keep to their own module files because you told them to, but every one of them also edits <code>ts/src/index.ts</code>. The lab leaves that collision in place so you can see it. Lesson 14 removes it.</p>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-12">
+    <div class="lab__head">
+      <span class="label">Lab 12 · In your shell, then Claude Code</span>
+      <span class="lab__meta">~20 min · est. $1.00–$3.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run four headless porters in parallel under a JSON contract, collect their results as files, and reconcile those claims against <code>status.py</code>.</p>
+      <ol class="lab__steps">
+        <li><p>Work in a throwaway copy so you can re-port four ops you already have and compare against known-good versions. From the folder that contains <code>kestrel-starter</code>, make the copy and remove four TypeScript ports and their barrel lines. The <code>rm</code> of <code>settings.local.json</code> turns off your Lesson 4 Stop gate in the copy only; otherwise each porter would be sent back to work while the others' modules are still half-done.</p>
+          <div class="cmd"><pre><code>rm -rf kestrel-l12 &amp;&amp; cp -r kestrel-starter kestrel-l12 &amp;&amp; cd kestrel-l12
+rm -f .claude/settings.local.json
+for m in threshold resize rotate brightness; do
+  rm -f ts/src/ops/$m.ts ts/test/ops/$m.test.ts
+  grep -v "/ops/$m\"" ts/src/index.ts &gt; ts/src/index.tmp &amp;&amp; mv ts/src/index.tmp ts/src/index.ts
+done
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Launch four porters in the background, one per module, each with the contract, a turn cap and a budget cap. <code>&lt; /dev/null</code> stops a background job from waiting on your terminal.</p>
+          <div class="cmd"><pre><code>SCHEMA='{"type":"object","properties":{"module":{"type":"string"},"status":{"type":"string","enum":["ported","failed","blocked"]},"tests_passed":{"type":"boolean"},"traps_found":{"type":"array","items":{"type":"string"}},"notes":{"type":"string"}},"required":["module","status","tests_passed","traps_found","notes"],"additionalProperties":false}'
+mkdir -p results
+for m in threshold resize rotate brightness; do
+  claude -p "Port kestrel/ops/$m.py and its tests to ts/src/ops/$m.ts and ts/test/ops/$m.test.ts, following MIGRATION.md. Add its export line to ts/src/index.ts. Touch no other files; do not edit MIGRATION.md, list any trap you find in traps_found instead. Run scripts/verify.sh kestrel/ops/$m.py until it passes or you run out of turns. Set module to kestrel/ops/$m.py. Set tests_passed to true only if your last verify.sh run exited 0." \
+    --model haiku \
+    --output-format json --json-schema "$SCHEMA" \
+    --max-turns 25 --max-budget-usd 0.75 \
+    --permission-mode acceptEdits \
+    --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(npx vitest*),Bash(python -m pytest*)" \
+    &lt; /dev/null &gt; results/$m.json &amp;
+done
+wait
+ls -l results/</code></pre></div>
+        </li>
+        <li><p>Print the claims next to cost and turns. All of it comes from the JSON envelope, none from prose.</p>
+          <div class="cmd"><pre><code>python - &lt;&lt;'EOF'
+import glob, json
+for f in sorted(glob.glob("results/*.json")):
+    r = json.load(open(f))
+    s = r.get("structured_output") or {}
+    print(s.get("module"), s.get("status"), s.get("tests_passed"),
+          r.get("num_turns"), r.get("total_cost_usd"), s.get("traps_found"))
+EOF</code></pre></div>
+        </li>
+        <li><p>Check the unprotected shared file. You expect four export lines, one per module.</p>
+          <div class="cmd"><pre><code>grep -nE 'ops/(threshold|resize|rotate|brightness)"' ts/src/index.ts</code></pre></div>
+        </li>
+        <li><p>Open Claude Code in the copy and reconcile. The orchestrator is the single writer for <code>MIGRATION.md</code>.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Reconcile the parallel run. Read every results/*.json (the claim is in structured_output). Run `python scripts/status.py --json` and scripts/verify.sh for each of the four modules. Show me a table: module, claimed status, claimed tests_passed, actual verify result, turns, cost, traps claimed. Flag every row where claim and repo disagree and explain the likely cause. Check ts/src/index.ts for missing or duplicated export lines. Then, as the only writer of MIGRATION.md, append any trap that is genuinely new (deduplicate against T1 to T5 and against each other). Do not fix any module yet.</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Four files in <code>results/</code>, each with a <code>structured_output</code> that matches the schema, and real numbers for turns and cost. <code>resize</code> and <code>rotate</code> probably report T2 in <code>traps_found</code>, which the reconcile step should recognise as already known. On some runs the claims and <code>status.py</code> agree completely. On others you find a missing or doubled line in <code>index.ts</code>, or a module that claimed success but fails now. Either outcome teaches the lesson: you only know because you measured. If Haiku failed a module that Sonnet handled in Lesson 7, rerun just that one with <code>--model sonnet</code>.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Rerun the four jobs with <code>xargs -P 4</code> instead of a loop with <code>&amp;</code>, and give each run its own retry: if <code>structured_output.status</code> is <code>failed</code>, rerun that module once with <code>--model sonnet</code>. Note what the retry cost compared with the first attempt. You will build this retry into a workflow in Week 4.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Fix the shape of every handoff with a schema, then treat every field in it as a claim and check it against state derived from the repo. Give each shared file exactly one writer, and when you can, give each writer its own file.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 13 · Who talks to whom. Hub-and-spoke, hierarchy, mesh and blackboard, and a first run with an experimental agent team.</div>
+</section>

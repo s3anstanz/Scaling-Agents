@@ -1,0 +1,361 @@
+<section class="lesson" id="lesson-16" data-week="4" data-title="Workflows: orchestration as code" data-minutes="17">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 16</span>
+    <span class="meta">Week 4 · Scale</span>
+    <span class="meta">~17 min</span>
+    <span class="scale" data-scale="100">100 agents</span>
+  </div>
+  <h1>Workflows: orchestration as code</h1>
+  <p class="lesson__deck">Until now a model decided who to spawn, in what order, and when to stop. A workflow moves those decisions into a short JavaScript file. The shape of the work becomes code you can read, rerun and save, while each step inside it is still a full agent.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Who decides the next step?</h2>
+  <p>Every multi-agent run you have done so far had a lead. In Lesson 11 the lead read <code>PLAN.md</code> and chose which subagents to start. In Lesson 13 the lead of an agent team created tasks and waited for teammates. In both cases the orchestration lived inside a model's head. Call this <b>model-driven orchestration</b>. The lead looks at the situation and picks the next step, the same way a single agent picks its next tool call.</p>
+  <p>Model-driven orchestration is flexible. If <code>ops/blur.py</code> turns out to need a helper nobody planned for, the lead can notice and adapt. That flexibility has a price, and the price grows with the number of agents.</p>
+  <ul>
+    <li><b>It varies.</b> Ask a lead to port 14 modules and it might start 14 subagents. Ask again and it might group them into four batches, or port two itself because they looked easy.</li>
+    <li><b>It forgets.</b> Every subagent report lands in the lead's context. By report twelve, report three is far back, and a module can quietly drop out of the plan.</li>
+    <li><b>It is hard to resume.</b> If the session dies halfway, the plan was in a context window that no longer exists.</li>
+    <li><b>It costs judgment where none is needed.</b> "For each ready module, port it, then verify it" is a loop. Asking an expensive model to rediscover that loop on every run is waste.</li>
+  </ul>
+  <p>The alternative is <b>scripted orchestration</b>. You write the graph down as code: the loops, the fan-out, the conditions. Each node in that graph is still a real agent with its own tools and its own loop. The script decides <i>which</i> agents run and in what shape. The agents decide <i>how</i> to do their piece.</p>
+  <p>Anthropic's "Building effective agents" post draws the same line. It calls systems where code defines the path <i>workflows</i>, and systems where the model directs its own process <i>agents</i>. Its advice is to start with the simplest thing that works. Claude Code's workflow feature lets you mix the two: code owns the graph, agents own the nodes.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 300" role="img" aria-label="Left: a lead model decides how many subagents to start. Right: a script called port-wave.js fans out to three lanes, each a port agent followed by a verify agent, with a retry loop on one lane.">
+      <text class="g-cap" x="20" y="26">Model-driven: the lead decides</text>
+      <g class="g-node g-node--orch" data-node="lead"><rect x="115" y="60" width="120" height="44" rx="8"/><text x="175" y="87">Lead</text></g>
+      <g class="g-node g-node--worker" data-node="w1"><rect x="20" y="190" width="90" height="44" rx="8"/><text x="65" y="217">Subagent</text></g>
+      <g class="g-node g-node--worker" data-node="w2"><rect x="130" y="190" width="90" height="44" rx="8"/><text x="175" y="217">Subagent</text></g>
+      <g class="g-node g-node--worker" data-node="w3"><rect x="240" y="190" width="90" height="44" rx="8"/><text x="285" y="217">Subagent</text></g>
+      <path class="g-edge" d="M175 104 C 175 150, 65 150, 65 190"/>
+      <path class="g-edge" d="M175 104 L175 190"/>
+      <path class="g-edge" d="M175 104 C 175 150, 285 150, 285 190"/>
+      <text class="g-cap" x="20" y="270">How many, in what order: a fresh judgment call</text>
+      <text class="g-cap" x="390" y="26">Scripted: port-wave.js decides</text>
+      <g class="g-node g-node--orch" data-node="script"><rect x="470" y="40" width="160" height="44" rx="8"/><text x="550" y="67">port-wave.js</text></g>
+      <g class="g-node g-node--worker" data-node="pa"><rect x="420" y="110" width="110" height="40" rx="8"/><text x="475" y="135">Port A</text></g>
+      <g class="g-node g-node--worker" data-node="pb"><rect x="420" y="170" width="110" height="40" rx="8"/><text x="475" y="195">Port B</text></g>
+      <g class="g-node g-node--worker" data-node="pc"><rect x="420" y="230" width="110" height="40" rx="8"/><text x="475" y="255">Port C</text></g>
+      <g class="g-node g-node--check" data-node="va"><rect x="580" y="110" width="110" height="40" rx="8"/><text x="635" y="135">Verify A</text></g>
+      <g class="g-node g-node--check" data-node="vb"><rect x="580" y="170" width="110" height="40" rx="8"/><text x="635" y="195">Verify B</text></g>
+      <g class="g-node g-node--check" data-node="vc"><rect x="580" y="230" width="110" height="40" rx="8"/><text x="635" y="255">Verify C</text></g>
+      <path class="g-edge" d="M470 62 C 398 62, 398 130, 420 130"/>
+      <path class="g-edge" d="M470 62 C 398 62, 398 190, 420 190"/>
+      <path class="g-edge" d="M470 62 C 398 62, 398 250, 420 250"/>
+      <path class="g-edge" d="M530 130 L580 130"/>
+      <path class="g-edge" d="M530 190 L580 190"/>
+      <path class="g-edge" d="M530 250 L580 250"/>
+      <path class="g-edge g-edge--loop" d="M635 270 C 635 292, 475 292, 475 272"/>
+    </svg>
+    <figcaption>Same work, two owners. On the left the graph is whatever the lead chooses this time. On the right the graph is fixed by code, and each lane can still loop when a verify fails.</figcaption>
+  </figure>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>You ask a model-driven lead to port the 14 modules of wave L3 with subagents, and you run the exact same prompt twice on a fresh copy. Then you do the same with a workflow script. What changes between the two runs in each case?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>With the lead, almost anything can change: how many subagents start, which modules share a subagent, whether each one is verified separately, and whether the lead ports a couple of "easy" ones itself. With the script, the graph is identical both times: one finder, 14 port agents, 14 verify agents, one report. What still varies is inside each agent (how <code>blur.ts</code> handles banker's rounding, how many turns it takes). That is the variation you want to keep, because it is where the real work happens.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part two</span>The script API in one page</h2>
+  <p>A workflow is a plain JavaScript file. It is not TypeScript, and it is not a Node program with access to your disk. It is a coordinator. It calls a small set of functions the runtime provides, and agents do everything that touches the repo.</p>
+
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Call</th><th>What it does</th><th>Kestrel use</th></tr></thead>
+      <tbody>
+        <tr><td><code>agent(prompt, opts)</code></td><td>Starts one agent and waits for its final answer. Returns text, an object when <code>opts.schema</code> is set, or <code>null</code> if it failed. Options include <code>label</code>, <code>phase</code>, <code>schema</code>, <code>model</code>, <code>effort</code>, <code>isolation: 'worktree'</code> and <code>agentType</code> (reuse a <code>.claude/agents/</code> definition).</td><td>Port <code>kestrel/ops/pad.py</code> on <code>haiku</code>, return <code>{ module, status, traps }</code>.</td></tr>
+        <tr><td><code>parallel([() =&gt; ..., ...])</code></td><td>Runs every thunk at once and waits for all of them. A barrier. It never rejects: a thunk that fails becomes <code>null</code> in the result array.</td><td>Three strategy agents that must all finish before a planner compares them.</td></tr>
+        <tr><td><code>pipeline(items, s1, s2, ...)</code></td><td>Each item flows through the stages on its own. No barrier between stages.</td><td>Port then verify, per module, so fast modules do not wait for slow ones.</td></tr>
+        <tr><td><code>phase(title)</code>, <code>log(msg)</code></td><td>Label progress in <code>/workflows</code> and print lines to the run log.</td><td><code>phase('Port and verify')</code>, <code>log('11/14 green')</code>.</td></tr>
+        <tr><td><code>args</code>, <code>budget</code></td><td>The input you passed when starting the run, and the run's budget: <code>budget.total</code> and <code>budget.remaining()</code>.</td><td>A <code>--small</code> flag; stop before a wave when little budget is left.</td></tr>
+        <tr><td><code>workflow(name, args)</code></td><td>Runs another workflow as one step. Nesting goes one level deep.</td><td>A top-level <code>migrate</code> that calls <code>port-wave</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">The whole surface area. Everything else is ordinary JavaScript: variables, loops, <code>if</code>, <code>map</code>, <code>filter</code>.</p>
+
+  <p>Three rules keep a script valid. First, it begins with <code>export const meta = {...}</code>, and that object must be a pure literal: a name, a description, and a list of phases whose titles match your <code>phase()</code> calls. Second, the script never calls <code>Date.now()</code> or <code>Math.random()</code>, never reads files and never runs shell commands. If you need the list of ready modules, an agent runs <code>python scripts/status.py --next</code> and returns it. Third, because <code>parallel()</code> turns failures into <code>null</code>, you almost always follow it with <code>.filter(Boolean)</code> before reading results.</p>
+  <p>The <code>schema</code> option deserves a moment. In Lesson 12 you passed <code>--json-schema</code> to headless runs so every worker returned the same fields. Inside a workflow the same idea is one option. Give <code>agent()</code> a JSON Schema with <code>type: 'object'</code>, <code>properties</code> and <code>required</code>, and you get back an object your script can branch on. No regex over prose, no "the agent said it mostly worked".</p>
+  <p>The difference between <code>parallel</code> and <code>pipeline</code> matters more than it first looks. Wave L3 mixes quick modules like <code>invert</code> with slow ones like <code>blur</code>, which hits the T1 rounding trap and usually needs a few extra turns. With two <code>parallel</code> calls (port all, then verify all), every verify waits for the slowest port. With <code>pipeline(modules, port, verify)</code>, <code>invert</code> is verified and done while <code>blur</code> is still on its third attempt.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Wave L3 has 14 modules. You want each one verified by an independent agent the moment its port finishes, and you want a failed port to leave a <code>null</code> in the results instead of crashing the run. Which shape fits?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t"><code>parallel</code> of 14 ports, then <code>parallel</code> of 14 verifies</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t"><code>pipeline(modules, port, verify)</code>, then <code>.filter(Boolean)</code></span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">A <code>for</code> loop that awaits port then verify for each module in turn</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">One <code>agent()</code> call told to port all 14 and verify each</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>It works, but the second <code>parallel</code> is a barrier. No verify starts until the slowest port (probably <code>blur</code>) is finished, so quick modules sit idle.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>Each module moves through port and verify on its own, with no barrier between stages. Filtering out <code>null</code> handles any item whose agent failed.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>That is a chain. It is correct and fully sequential, so 14 modules take 14 times as long. You built a fleet and then made it wait in line.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>That is a single agent with a long to-do list. Its context fills with 14 modules' worth of files, and the verifier is the same agent that wrote the code, so nothing independent checks it.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>A full <code>port-wave</code> workflow</h2>
+  <p>Here is a complete workflow that ports whatever wave is ready right now. It has three phases. A scout agent asks <code>scripts/status.py</code> what is ready. A pipeline ports and verifies each module. A short report prints what is green, what is red and which traps showed up. Click the marked lines.</p>
+
+  <div class="c-code wide" data-component="code">
+  <div class="c-code__head"><span>.claude/workflows/port-wave.js</span><span class="tag">Click a marked line</span></div>
+  <div class="c-code__grid">
+    <ol class="c-code__lines">
+      <li><button class="cl" data-note="n1"><span class="ln">1</span><pre><span class="tk-kw">export</span> <span class="tk-kw">const</span> meta = {</pre></button></li>
+      <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">name</span>: <span class="tk-str">'port-wave'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">3</span><pre>  <span class="tk-key">description</span>: <span class="tk-str">'Port every module in the next ready wave, one agent per module, each checked by scripts/verify.sh'</span>,</pre></div></li>
+      <li><button class="cl" data-note="n2"><span class="ln">4</span><pre>  <span class="tk-key">phases</span>: [{ <span class="tk-key">title</span>: <span class="tk-str">'Find'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Port and verify'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Report'</span> }]</pre></button></li>
+      <li><div class="cl"><span class="ln">5</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">6</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n3"><span class="ln">7</span><pre><span class="tk-kw">const</span> listSchema = {</pre></button></li>
+      <li><div class="cl"><span class="ln">8</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">9</span><pre>  <span class="tk-key">properties</span>: { <span class="tk-key">modules</span>: { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } } },</pre></div></li>
+      <li><div class="cl"><span class="ln">10</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'modules'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">11</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">12</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">13</span><pre><span class="tk-kw">const</span> portSchema = {</pre></div></li>
+      <li><div class="cl"><span class="ln">14</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">15</span><pre>  <span class="tk-key">properties</span>: {</pre></div></li>
+      <li><div class="cl"><span class="ln">16</span><pre>    <span class="tk-key">module</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> },</pre></div></li>
+      <li><button class="cl" data-note="n4"><span class="ln">17</span><pre>    <span class="tk-key">status</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span>, <span class="tk-key">enum</span>: [<span class="tk-str">'ported'</span>, <span class="tk-str">'stuck'</span>] },</pre></button></li>
+      <li><div class="cl"><span class="ln">18</span><pre>    <span class="tk-key">traps</span>: { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } }</pre></div></li>
+      <li><div class="cl"><span class="ln">19</span><pre>  },</pre></div></li>
+      <li><div class="cl"><span class="ln">20</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'module'</span>, <span class="tk-str">'status'</span>, <span class="tk-str">'traps'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">21</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">22</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">23</span><pre><span class="tk-kw">const</span> verifySchema = {</pre></div></li>
+      <li><div class="cl"><span class="ln">24</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">25</span><pre>  <span class="tk-key">properties</span>: { <span class="tk-key">passed</span>: { <span class="tk-key">type</span>: <span class="tk-str">'boolean'</span> }, <span class="tk-key">error</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } },</pre></div></li>
+      <li><div class="cl"><span class="ln">26</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'passed'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">27</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">28</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">29</span><pre>phase(<span class="tk-str">'Find'</span>)</pre></div></li>
+      <li><button class="cl" data-note="n5"><span class="ln">30</span><pre><span class="tk-kw">const</span> ready = <span class="tk-kw">await</span> agent(</pre></button></li>
+      <li><div class="cl"><span class="ln">31</span><pre>  <span class="tk-str">'Run python scripts/status.py --next. Return the module ids it prints, one per line, like core/color. Edit nothing.'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">32</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'find ready wave'</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: listSchema })</pre></div></li>
+      <li><button class="cl" data-note="n6"><span class="ln">33</span><pre><span class="tk-kw">const</span> modules = ready?.modules ?? []</pre></button></li>
+      <li><div class="cl"><span class="ln">34</span><pre>log(<span class="tk-str">`Ready wave: ${modules.length} modules`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">35</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">36</span><pre>phase(<span class="tk-str">'Port and verify'</span>)</pre></div></li>
+      <li><button class="cl" data-note="n7"><span class="ln">37</span><pre><span class="tk-kw">const</span> port = <span class="tk-kw">async</span> (m) =&gt; ({</pre></button></li>
+      <li><div class="cl"><span class="ln">38</span><pre>  <span class="tk-key">module</span>: m,</pre></div></li>
+      <li><div class="cl"><span class="ln">39</span><pre>  <span class="tk-key">port</span>: <span class="tk-kw">await</span> agent(</pre></div></li>
+      <li><div class="cl"><span class="ln">40</span><pre>    <span class="tk-str">`Port ${m} and its tests to TypeScript, following MIGRATION.md.</span></pre></div></li>
+      <li><div class="cl"><span class="ln">41</span><pre><span class="tk-str">Port every Python test as it("test_name"). Edit only this module's files under ts/src and ts/test. Never edit ts/src/index.ts.</span></pre></div></li>
+      <li><button class="cl" data-note="n8"><span class="ln">42</span><pre><span class="tk-str">You are done only when scripts/verify.sh ${m} exits 0. Report any Python-vs-JS trap you hit.`</span>,</pre></button></li>
+      <li><button class="cl" data-note="n9"><span class="ln">43</span><pre>    { <span class="tk-key">label</span>: <span class="tk-str">`port ${m}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: portSchema })</pre></button></li>
+      <li><div class="cl"><span class="ln">44</span><pre>})</pre></div></li>
+      <li><button class="cl" data-note="n10"><span class="ln">45</span><pre><span class="tk-kw">const</span> verify = <span class="tk-kw">async</span> (p) =&gt; ({</pre></button></li>
+      <li><div class="cl"><span class="ln">46</span><pre>  ...p,</pre></div></li>
+      <li><div class="cl"><span class="ln">47</span><pre>  <span class="tk-key">check</span>: <span class="tk-kw">await</span> agent(</pre></div></li>
+      <li><div class="cl"><span class="ln">48</span><pre>    <span class="tk-str">`Run scripts/verify.sh ${p.module}. Edit nothing. passed is true only if it exits 0; error is the first failing line.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">49</span><pre>    { <span class="tk-key">label</span>: <span class="tk-str">`verify ${p.module}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: verifySchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">50</span><pre>})</pre></div></li>
+      <li><button class="cl" data-note="n11"><span class="ln">51</span><pre><span class="tk-kw">const</span> results = (<span class="tk-kw">await</span> pipeline(modules, port, verify)).filter(Boolean)</pre></button></li>
+      <li><div class="cl"><span class="ln">52</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">53</span><pre>phase(<span class="tk-str">'Report'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">54</span><pre><span class="tk-kw">const</span> green = results.filter((r) =&gt; r.check?.passed)</pre></div></li>
+      <li><div class="cl"><span class="ln">55</span><pre>log(<span class="tk-str">`${green.length}/${modules.length} green`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">56</span><pre><span class="tk-kw">for</span> (<span class="tk-kw">const</span> r <span class="tk-kw">of</span> results) {</pre></div></li>
+      <li><div class="cl"><span class="ln">57</span><pre>  <span class="tk-kw">if</span> (!r.check?.passed) log(<span class="tk-str">`RED ${r.module}: ${r.check?.error ?? 'verify agent failed'}`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">58</span><pre>}</pre></div></li>
+      <li><button class="cl" data-note="n12"><span class="ln">59</span><pre><span class="tk-kw">const</span> traps = [...<span class="tk-kw">new</span> Set(results.flatMap((r) =&gt; r.port?.traps ?? []))]</pre></button></li>
+      <li><div class="cl"><span class="ln">60</span><pre><span class="tk-kw">if</span> (traps.length) log(<span class="tk-str">`Traps to add to MIGRATION.md: ${traps.join('; ')}`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">61</span><pre><span class="tk-kw">await</span> agent(<span class="tk-str">'Run python scripts/gen_barrel.py to regenerate ts/src/index.ts, then report its output. Edit nothing else.'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">62</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'regenerate barrel'</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span> })</pre></div></li>
+    </ol>
+    <div class="c-code__notes">
+      <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line to see why it is there.</p></div>
+      <div class="cnote" data-note="n1"><div class="label">Line 1 · meta</div><p>The header the runtime reads before anything runs. It must be a plain literal: no variables, no function calls. The <code>name</code> becomes the slash command when you save the file to <code>.claude/workflows/</code>, so this one runs as <code>/port-wave</code>.</p></div>
+      <div class="cnote" data-note="n2"><div class="label">Line 4 · phases</div><p>The phase titles shown in <code>/workflows</code>. Each one matches a <code>phase()</code> call below, character for character. Port and verify share one phase on purpose, because <code>pipeline()</code> interleaves them.</p></div>
+      <div class="cnote" data-note="n3"><div class="label">Line 7 · schema</div><p>A JSON Schema for the answer. With <code>schema</code> set, <code>agent()</code> returns an object instead of prose, so the script can loop over <code>modules</code> without parsing text. This is the Lesson 12 contract, moved inside the script.</p></div>
+      <div class="cnote" data-note="n4"><div class="label">Line 17 · closed vocabulary</div><p>An <code>enum</code> stops a worker from inventing statuses like <i>mostly done</i>. The script only has to handle two values.</p></div>
+      <div class="cnote" data-note="n5"><div class="label">Line 30 · a scout agent</div><p>The script cannot run shell commands itself, so a cheap agent runs <code>scripts/status.py --next</code> and hands back the list. Anything that touches the repo goes through an agent.</p></div>
+      <div class="cnote" data-note="n6"><div class="label">Line 33 · null-safe</div><p><code>agent()</code> returns <code>null</code> when the agent fails. Treat that as an empty wave instead of crashing the run.</p></div>
+      <div class="cnote" data-note="n7"><div class="label">Line 37 · stage one</div><p>Each pipeline stage is a function from one item to the next value. Returning <code>{ module, port }</code> carries the module name forward, so stage two knows what to verify even if the port agent returned nothing.</p></div>
+      <div class="cnote" data-note="n8"><div class="label">Line 42 · the exit condition</div><p>The same rule as Lesson 4, written into every worker prompt. The command decides done, and the worker is told exactly which command it is.</p></div>
+      <div class="cnote" data-note="n9"><div class="label">Line 43 · per-call model</div><p>A <code>model</code> on the call outranks every other model setting, including <code>CLAUDE_CODE_SUBAGENT_MODEL</code>. Bulk porting goes to the cheap model; the verify step catches what it gets wrong.</p></div>
+      <div class="cnote" data-note="n10"><div class="label">Line 45 · independent check</div><p>A second agent that only runs <code>scripts/verify.sh</code> and edits nothing. The porter's own claim never decides the result. A fresh agent with no stake in the port does.</p></div>
+      <div class="cnote" data-note="n11"><div class="label">Line 51 · pipeline, no barrier</div><p>Each module flows through port then verify on its own. A quick module like <code>invert</code> is verified while <code>blur</code> is still porting. <code>filter(Boolean)</code> drops any item whose stages failed outright.</p></div>
+      <div class="cnote" data-note="n12"><div class="label">Line 59 · traps go to a human</div><p>The script collects traps and prints them. It does not write <code>MIGRATION.md</code> from 14 agents at once, which would break the single-writer rule from Lesson 12.</p></div>
+    </div>
+  </div>
+</div>
+
+  <p>Notice what the script does not contain. It has no instructions on <i>how</i> to port a module. Those live in <code>MIGRATION.md</code> and <code>CLAUDE.md</code>, which every agent loads. The script holds only the shape: find, fan out, port, check, report. That separation is what lets you reuse it for every wave.</p>
+  <p>Count the agents. For the L3 wave that is 1 finder, 14 porters and 14 verifiers, so 29 agents. Remember that number for Part four.</p>
+
+  <h2><span class="h2num">Part four</span>Saving, running, watching, and the limits</h2>
+  <p>You rarely type a workflow from scratch. You ask for one in plain words ("use a workflow to port every ready module"), or you include the keyword <code>ultracode</code> in a prompt. Claude writes the script and runs it. If you want Claude to plan a workflow for every substantive task in a session, <code>/effort ultracode</code> does that. On a Pro plan, turn on "Dynamic workflows" in <code>/config</code> first.</p>
+  <p>While a workflow runs, <code>/workflows</code> shows live progress: phases, agents, their labels and status. Three keys matter. <code>p</code> pauses, <code>x</code> stops, and <code>s</code> saves the script. A saved workflow lands in <code>.claude/workflows/</code> for the project (or <code>~/.claude/workflows/</code> for you everywhere), and from then on it runs as a slash command named after its <code>meta.name</code>. Ours becomes <code>/port-wave</code>.</p>
+  <p>Workflows have limits, and at this scale you will meet them.</p>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Limit</th><th>Default</th><th>What it means for Kestrel</th></tr></thead>
+      <tbody>
+        <tr><td>Agents running at once</td><td>16 (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, 1 to 256)</td><td>The 14-module wave fits. A 140-module wave in the full library would run in batches.</td></tr>
+        <tr><td>Agents per run</td><td>1,000</td><td>Plenty for 24 modules. At 240 modules with verify and retry agents, you start to plan around it.</td></tr>
+        <tr><td>Items per <code>parallel</code> or <code>pipeline</code> call</td><td>4,096</td><td>Not a concern for Kestrel.</td></tr>
+        <tr><td>"Large workflow" warning</td><td>Above 25 agents or about 1.5M projected tokens</td><td>The 29-agent L3 run triggers it. That is a prompt to check the plan, not an error.</td></tr>
+        <tr><td><code>workflowSizeGuideline</code></td><td><code>medium</code> (under 10 agents)</td><td>Claude sizes the workflows it writes to this guideline. Options are <code>small</code> (under 5), <code>medium</code>, <code>large</code> (under 50) and <code>unrestricted</code>. For this week, use <code>large</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">The size guideline shapes what Claude proposes. The concurrency cap shapes how fast it runs. Leave the cap at 16 until Lesson 19.</p>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="script">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Your team keeps Kestrel's port moving every evening while the Python library keeps changing. Should the evening run be a prompt to a lead, or a saved workflow?</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>Every evening, port whatever <code>scripts/status.py --next</code> lists.</li><li>Every module must pass <code>scripts/verify.sh</code> before it counts.</li><li>New traps go into a report for a human, never straight into <code>MIGRATION.md</code>.</li><li>When it fails, you want to compare tonight's run with last night's.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="lead">Prompt a lead</button>
+        <button class="vbtn" data-pick="script">Saved workflow</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="lead"><span class="verdict-tag" data-v="fail">Not quite</span><p>A lead could do it, but every evening it would rebuild the graph from scratch and might build a different one. Comparing two runs is hard when their shapes differ. Nothing here needs fresh judgment about structure.</p></div>
+        <div class="vfb" data-for="script"><span class="verdict-tag" data-v="pass">Right call</span><p>You can write the graph down before it starts: find, port, verify, report. That is the test for a workflow. Saved as <code>/port-wave</code>, it runs the same shape every night, so a difference in results points at the code or the library, not at the orchestration.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="c-note"><p><b>The same ideas in code.</b> The Agent SDK (<code>claude-agent-sdk</code> in Python, <code>@anthropic-ai/claude-agent-sdk</code> in TypeScript) lets you build this kind of orchestration in your own program. The labs stay in the CLI, where workflows give you the progress view and saving for free.</p></div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-16">
+    <div class="lab__head">
+      <span class="label">Lab 16 · In Claude Code</span>
+      <span class="lab__meta">~25 min · est. $2–$6</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Have Claude write a workflow that ports the ready wave with one cheap agent per module, watch it in <code>/workflows</code>, save it, and run it until the 14-module wave is done.</p>
+      <ol class="lab__steps">
+        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Copy it again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one (or unzip the download again). The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
+          <div class="cmd"><pre><code>git -C scaling-agents pull -q
+cp -R scaling-agents/kestrel-starter ./kestrel-scale
+cd kestrel-scale
+printf '.venv/\nts/node_modules/\n__pycache__/\n.pytest_cache/\n.claude/settings.local.json\n' &gt;&gt; .gitignore
+git init &amp;&amp; git add -A &amp;&amp; git commit -m "Kestrel starter"
+python -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install pytest
+cd ts &amp;&amp; npm ci &amp;&amp; cd ..
+python -m pytest -q</code></pre></div>
+        </li>
+        <li><p>Bring over the barrel generator you wrote in Lesson 14, so porters never have to touch <code>ts/src/index.ts</code>. Then tag this state <code>fresh</code>; every lab this week resets the port back to it. If you skipped Lesson 14, ask Claude to write <code>scripts/gen_barrel.py</code>, which rewrites <code>ts/src/index.ts</code> with one <code>export * from</code> line per ported module.</p>
+          <div class="cmd"><pre><code>cp ../kestrel-starter/scripts/gen_barrel.py scripts/
+git add -A &amp;&amp; git commit -qm "week 4 setup" &amp;&amp; git tag fresh</code></pre></div>
+        </li>
+        <li><p>Tell Claude it may plan workflows of up to 50 agents. Create this file. It holds settings for your machine only, which is why the step above added it to <code>.gitignore</code>.</p>
+          <div class="cmd" data-file=".claude/settings.local.json"><pre><code>{
+  "workflowSizeGuideline": "large"
+}</code></pre></div>
+        </li>
+        <li><p>Start Claude Code with a strong lead model and cheap workers. The lead only writes the script; the workers do the porting.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
+        </li>
+        <li><p>Ask for the workflow in plain words.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Use a workflow to port every module in the next ready wave.
+Get the wave from: python scripts/status.py --next
+One agent per module, model haiku. Each agent ports the module and its tests
+following MIGRATION.md, edits only that module's files, never edits ts/src/index.ts,
+and is done only when scripts/verify.sh &lt;module&gt; exits 0 (port every Python test
+as it("test_name"), or verify.sh fails). Then a separate haiku agent runs scripts/verify.sh &lt;module&gt; and reports pass or fail;
+it edits nothing. Use pipeline so each module is verified as soon as its port finishes.
+End with a log of green and red modules and any traps the porters reported,
+then have one agent run python scripts/gen_barrel.py.
+Name it port-wave.</code></pre></div>
+        </li>
+        <li><p>While it runs, type <code>/workflows</code>. Find the phases and the agent labels. When it finishes, press <code>s</code> to save it. Then check what landed on disk and how the repo moved.</p>
+          <div class="cmd"><pre><code>ls .claude/workflows/
+python scripts/status.py</code></pre></div>
+        </li>
+        <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one and expect the "Large workflow" warning.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
+        </li>
+        <li><p>Compare Claude's saved script with the reference version below. If yours is missing an independent verify, a schema, or the null filter, replace it with this one and rerun <code>/port-wave</code>; green modules come back green again, so nothing is lost.</p>
+          <div class="cmd" data-file=".claude/workflows/port-wave.js"><pre><code>export const meta = {
+  name: 'port-wave',
+  description: 'Port every module in the next ready wave, one agent per module, each checked by scripts/verify.sh',
+  phases: [{ title: 'Find' }, { title: 'Port and verify' }, { title: 'Report' }]
+}
+
+const listSchema = {
+  type: 'object',
+  properties: { modules: { type: 'array', items: { type: 'string' } } },
+  required: ['modules']
+}
+
+const portSchema = {
+  type: 'object',
+  properties: {
+    module: { type: 'string' },
+    status: { type: 'string', enum: ['ported', 'stuck'] },
+    traps: { type: 'array', items: { type: 'string' } }
+  },
+  required: ['module', 'status', 'traps']
+}
+
+const verifySchema = {
+  type: 'object',
+  properties: { passed: { type: 'boolean' }, error: { type: 'string' } },
+  required: ['passed']
+}
+
+phase('Find')
+const ready = await agent(
+  'Run python scripts/status.py --next. Return the module ids it prints, one per line, like core/color. Edit nothing.',
+  { label: 'find ready wave', model: 'haiku', schema: listSchema })
+const modules = ready?.modules ?? []
+log(`Ready wave: ${modules.length} modules`)
+
+phase('Port and verify')
+const port = async (m) =&gt; ({
+  module: m,
+  port: await agent(
+    `Port ${m} and its tests to TypeScript, following MIGRATION.md.
+Port every Python test as it("test_name"). Edit only this module's files under ts/src and ts/test. Never edit ts/src/index.ts.
+You are done only when scripts/verify.sh ${m} exits 0. Report any Python-vs-JS trap you hit.`,
+    { label: `port ${m}`, model: 'haiku', schema: portSchema })
+})
+const verify = async (p) =&gt; ({
+  ...p,
+  check: await agent(
+    `Run scripts/verify.sh ${p.module}. Edit nothing. passed is true only if it exits 0; error is the first failing line.`,
+    { label: `verify ${p.module}`, model: 'haiku', schema: verifySchema })
+})
+const results = (await pipeline(modules, port, verify)).filter(Boolean)
+
+phase('Report')
+const green = results.filter((r) =&gt; r.check?.passed)
+log(`${green.length}/${modules.length} green`)
+for (const r of results) {
+  if (!r.check?.passed) log(`RED ${r.module}: ${r.check?.error ?? 'verify agent failed'}`)
+}
+const traps = [...new Set(results.flatMap((r) =&gt; r.port?.traps ?? []))]
+if (traps.length) log(`Traps to add to MIGRATION.md: ${traps.join('; ')}`)
+await agent('Run python scripts/gen_barrel.py to regenerate ts/src/index.ts, then report its output. Edit nothing else.',
+  { label: 'regenerate barrel', model: 'haiku' })</code></pre></div>
+        </li>
+        <li><p>Check the cost, then commit the result so later labs can compare against it.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 16: waves L0-L3 via port-wave"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Four runs with the same shape: one finder, then a port and a verify per module. The fourth run starts 14 porters at once, all within the 16-agent default. A few ops usually come back red on the first pass. <code>blur</code> trips T1 rounding, <code>pad</code> trips T3 modulo, and <code>resize</code> or <code>rotate</code> may trip T2 floor division if <code>mathutil</code>'s port hid it. The report lists those traps for you to add to <code>MIGRATION.md</code>. Exact counts and cost vary by run.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Edit the saved script so a red module gets one retry on <code>sonnet</code>, with the verify error pasted into its prompt, before it is reported red. Rerun on a fresh reset and compare the green count and <code>/usage</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>When you can draw the graph before the work starts, write it as a workflow. Code owns the shape, agents own the work inside each node, and the run looks the same every time you start it.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 17 · Orchestrators of orchestrators. Why a single lead drowns in 240 reports, and how a tree of sub-leads compresses them on the way up.</div>
+</section>

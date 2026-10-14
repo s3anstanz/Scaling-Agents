@@ -1,0 +1,208 @@
+<section class="lesson" id="lesson-13" data-week="3" data-title="Who talks to whom" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 13</span>
+    <span class="meta">Week 3 · Systems</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="10-25">10–25 agents</span>
+  </div>
+  <h1>Who talks to whom</h1>
+  <p class="lesson__deck">The graph shape from Lesson 9 says which work depends on which. Communication topology says which agents can send messages to which. It is a separate choice, and it sets most of your coordination cost.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Shape of the work, shape of the talk</h2>
+  <p>In Lesson 11 the work had a clear shape: a DAG in seven waves. That says nothing about how agents exchange information while they do it. Two systems with the same work graph can have very different conversations. In one, every porter reports only to the orchestrator. In another, porters talk to each other directly, and the orchestrator mostly listens.</p>
+  <p>The pattern of who can talk to whom is the <b>communication topology</b>. You will meet four of them in practice. Each one is a trade between how much information moves and how much it costs to move it.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 260" role="img" aria-label="Four topologies side by side: hub-and-spoke, hierarchy, mesh and blackboard">
+      <text class="g-cap" x="90" y="24" text-anchor="middle">Hub-and-spoke</text>
+      <text class="g-cap" x="270" y="24" text-anchor="middle">Hierarchy</text>
+      <text class="g-cap" x="450" y="24" text-anchor="middle">Mesh</text>
+      <text class="g-cap" x="630" y="24" text-anchor="middle">Blackboard</text>
+
+      <g class="g-node g-node--orch" data-node="h-lead"><rect x="55" y="50" width="70" height="32" rx="8"/><text x="90" y="71">lead</text></g>
+      <g class="g-node g-node--worker" data-node="h-w1"><rect x="8" y="170" width="44" height="32" rx="8"/><text x="30" y="191">w1</text></g>
+      <g class="g-node g-node--worker" data-node="h-w2"><rect x="68" y="170" width="44" height="32" rx="8"/><text x="90" y="191">w2</text></g>
+      <g class="g-node g-node--worker" data-node="h-w3"><rect x="128" y="170" width="44" height="32" rx="8"/><text x="150" y="191">w3</text></g>
+      <path class="g-edge" d="M80 82 L35 170"/>
+      <path class="g-edge" d="M90 82 L90 170"/>
+      <path class="g-edge" d="M100 82 L145 170"/>
+
+      <g class="g-node g-node--orch" data-node="t-lead"><rect x="235" y="40" width="70" height="32" rx="8"/><text x="270" y="61">lead</text></g>
+      <g class="g-node g-node--orch" data-node="t-s1"><rect x="195" y="110" width="60" height="32" rx="8"/><text x="225" y="131">sub</text></g>
+      <g class="g-node g-node--orch" data-node="t-s2"><rect x="285" y="110" width="60" height="32" rx="8"/><text x="315" y="131">sub</text></g>
+      <g class="g-node g-node--worker" data-node="t-w1"><rect x="185" y="180" width="36" height="30" rx="8"/><text x="203" y="200">w</text></g>
+      <g class="g-node g-node--worker" data-node="t-w2"><rect x="229" y="180" width="36" height="30" rx="8"/><text x="247" y="200">w</text></g>
+      <g class="g-node g-node--worker" data-node="t-w3"><rect x="275" y="180" width="36" height="30" rx="8"/><text x="293" y="200">w</text></g>
+      <g class="g-node g-node--worker" data-node="t-w4"><rect x="319" y="180" width="36" height="30" rx="8"/><text x="337" y="200">w</text></g>
+      <path class="g-edge" d="M260 72 L230 110"/>
+      <path class="g-edge" d="M280 72 L310 110"/>
+      <path class="g-edge" d="M218 142 L205 180"/>
+      <path class="g-edge" d="M232 142 L245 180"/>
+      <path class="g-edge" d="M308 142 L295 180"/>
+      <path class="g-edge" d="M322 142 L335 180"/>
+
+      <g class="g-node g-node--orch" data-node="m-lead"><rect x="377" y="59" width="56" height="32" rx="8"/><text x="405" y="80">lead</text></g>
+      <g class="g-node g-node--worker" data-node="m-a"><rect x="467" y="59" width="56" height="32" rx="8"/><text x="495" y="80">A</text></g>
+      <g class="g-node g-node--worker" data-node="m-b"><rect x="377" y="159" width="56" height="32" rx="8"/><text x="405" y="180">B</text></g>
+      <g class="g-node g-node--worker" data-node="m-c"><rect x="467" y="159" width="56" height="32" rx="8"/><text x="495" y="180">C</text></g>
+      <path class="g-edge g-edge--faint" d="M433 75 L467 75"/>
+      <path class="g-edge g-edge--faint" d="M433 175 L467 175"/>
+      <path class="g-edge g-edge--faint" d="M405 91 L405 159"/>
+      <path class="g-edge g-edge--faint" d="M495 91 L495 159"/>
+      <path class="g-edge g-edge--faint" d="M433 91 L467 159"/>
+      <path class="g-edge g-edge--faint" d="M467 91 L433 159"/>
+
+      <g class="g-node g-node--data" data-node="b-board"><rect x="580" y="114" width="100" height="32" rx="8"/><text x="630" y="135">files</text></g>
+      <g class="g-node g-node--worker" data-node="b-a"><rect x="550" y="45" width="50" height="30" rx="8"/><text x="575" y="65">A</text></g>
+      <g class="g-node g-node--worker" data-node="b-b"><rect x="660" y="45" width="50" height="30" rx="8"/><text x="685" y="65">B</text></g>
+      <g class="g-node g-node--worker" data-node="b-c"><rect x="550" y="185" width="50" height="30" rx="8"/><text x="575" y="205">C</text></g>
+      <g class="g-node g-node--worker" data-node="b-d"><rect x="660" y="185" width="50" height="30" rx="8"/><text x="685" y="205">D</text></g>
+      <path class="g-edge" d="M580 75 L600 114"/>
+      <path class="g-edge" d="M680 75 L660 114"/>
+      <path class="g-edge" d="M580 185 L600 146"/>
+      <path class="g-edge" d="M680 185 L660 146"/>
+
+      <text class="g-cap" x="90" y="240" text-anchor="middle">n − 1 channels</text>
+      <text class="g-cap" x="270" y="240" text-anchor="middle">few per node</text>
+      <text class="g-cap" x="450" y="240" text-anchor="middle">n(n − 1)/2</text>
+      <text class="g-cap" x="630" y="240" text-anchor="middle">no messages</text>
+    </svg>
+    <figcaption>Four topologies. Subagents give you the first two. Agent teams give you the third. Shared files (Lesson 12) are the fourth, and they combine with any of the others.</figcaption>
+  </figure>
+
+  <h2><span class="h2num">Part two</span>The four topologies</h2>
+  <p><b>Hub-and-spoke.</b> One orchestrator in the middle, workers around it, and every message goes through the middle. This is what Claude Code subagents give you. A subagent receives one delegation message from its parent and sends back one final report. It cannot see or message its siblings. Everything you did in Lesson 11 was hub-and-spoke. The hub is simple and easy to reason about, and it is also the bottleneck: every report lands in one context window.</p>
+  <p><b>Hierarchy.</b> A tree of hubs. The lead talks to a few sub-leads, and each sub-lead runs its own workers. Claude Code subagents can spawn subagents, up to 3 layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>), and up to 20 run at once by default (<code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>). Each level summarizes before passing information up, which keeps the lead's context small and loses detail at every step. Week 4 builds a hierarchy for Kestrel-240.</p>
+  <p><b>Mesh.</b> Any agent can message any other directly. Claude Code's agent teams work this way: teammates message each other by name and share a task list. A mesh moves information fastest between the two agents who need it, without a trip through the lead. It is also the most expensive shape, for a reason you can count.</p>
+  <p><b>Blackboard.</b> Nobody sends messages. Agents read and write a shared surface, which for Kestrel means files: the repo, <code>results/</code>, <code>MIGRATION.md</code>, <code>PLAN.md</code>. Lesson 12 used it with the single-writer rule. In practice it runs underneath the other three. Even a hub-and-spoke system shares the repo.</p>
+
+  <h2><span class="h2num">Part three</span>Counting channels</h2>
+  <p>A <b>channel</b> is a pair of agents that can talk to each other. A hub with <i>n</i> agents has <i>n</i> − 1 channels, one from the hub to each worker. A full mesh has a channel between every pair: <i>n</i>(<i>n</i> − 1)/2.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>A lead plus 9 teammates, all able to message each other, makes 10 agents. How many channels is that? How many would the same 10 agents have as hub-and-spoke?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Mesh: 10 × 9 / 2 = 45 channels. Hub-and-spoke: 9. Each channel is a place where a message can be sent, read, misread and answered, and every read costs tokens in somebody's context. Five times the channels does not guarantee five times the messages, but it allows them, and agents asked to coordinate tend to use the channels they have.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Agents</th><th>Hub-and-spoke channels</th><th>Mesh channels</th></tr></thead>
+      <tbody>
+        <tr><td>3</td><td>2</td><td>3</td></tr>
+        <tr><td>5</td><td>4</td><td>10</td></tr>
+        <tr><td>10</td><td>9</td><td>45</td></tr>
+        <tr><td>25</td><td>24</td><td>300</td></tr>
+        <tr><td>100</td><td>99</td><td>4,950</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Hub channels grow in a straight line. Mesh channels grow with the square. This is why the docs suggest starting agent teams at 3–5 teammates, and why nobody runs a 100-agent mesh.</p>
+
+  <h2><span class="h2num">Part four</span>How each topology fails</h2>
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Topology</th><th>Typical failure</th><th>What it looks like on Kestrel</th><th>Guard</th></tr></thead>
+      <tbody>
+        <tr><td>Hub-and-spoke</td><td>Hub overload; lossy reports</td><td>The orchestrator reads 14 L3 reports and starts confusing <code>resize</code> with <code>rotate</code></td><td>Contracts (Lesson 12); a hierarchy once reports pile up</td></tr>
+        <tr><td>Hierarchy</td><td>Detail lost at each summary; slow escalation</td><td>A sub-lead's summary says "ops done, 1 flaky", and the flaky one was the T3 bug in <code>pad</code></td><td>Summaries in a fixed schema; failures pass up verbatim</td></tr>
+        <tr><td>Mesh</td><td>Chatter; politeness loops; waiting on each other</td><td>Two teammates spend twenty messages agreeing on a function name</td><td>Few teammates; a narrow topic for messages; the lead owns decisions</td></tr>
+        <tr><td>Blackboard</td><td>Write collisions; stale reads</td><td>Two porters edit <code>ts/src/index.ts</code> and one export line disappears</td><td>Single writer per file; isolation (Lesson 14)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">No topology is free. Pick the one whose failure you can guard against most cheaply for the work at hand.</p>
+
+  <h2><span class="h2num">Part five</span>Agent teams (experimental)</h2>
+  <div class="c-note"><p><b>Experimental.</b> Agent teams are off by default and marked experimental. The details below are current as of this course, and they may change. Check the Claude Code docs before you build anything lasting on them.</p></div>
+  <p>Turn teams on by setting <code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code>, either in your shell or in the <code>env</code> block of <code>settings.json</code>. Your main session becomes the <b>team lead</b>. When you ask it for a team, it starts <b>teammates</b>, which are separate Claude Code instances, each with its own context window. Two things make a team different from a set of subagents.</p>
+  <ol>
+    <li>Teammates can message each other by name. A subagent can only report to its parent.</li>
+    <li>The team shares a <b>task list</b>. Each task has a status, and tasks can depend on other tasks, so a blocked task stays blocked until its dependency is complete.</li>
+  </ol>
+  <p>Some limits apply. A session can run one team. Teams cannot be nested. Teams do not work in <code>-p</code> headless mode or through the Agent SDK. Three hooks fire on team events: <code>TeammateIdle</code>, <code>TaskCreated</code> and <code>TaskCompleted</code>. You could, for example, attach a <code>TaskCompleted</code> hook that runs <code>scripts/verify.sh</code> for the module the task named, much as your Stop hook does.</p>
+  <p>Cost is the main thing to plan around. The Claude Code costs page notes that teams use roughly 7x the tokens of a single session when teammates run in plan mode. Every teammate carries its own full context, and every message is read by someone.</p>
+  <p>So when does a mesh pay for itself? When workers must settle something with each other in the middle of their work, and routing every question through the lead would be slower and lossier. On Kestrel, the twelve ops do not need to talk; each depends only on finished <code>core</code> modules. The pipeline chain is different. <code>runner</code> calls functions in <code>steps</code>, and <code>cli</code> calls <code>runner</code>. Whoever ports <code>runner</code> needs to know exactly what the <code>steps</code> port will export, and the cheapest way to find out is to ask the <code>steps</code> teammate directly.</p>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="subagents">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Imagine starting Kestrel's wave L3 from scratch. Which setup do you choose?</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>14 modules: twelve ops plus <code>io/ppm</code> and <code>io/pgm</code>.</li><li>All of them depend only on <code>core/*</code>, which is ported and passing.</li><li>None imports another module in the same wave.</li><li>Known traps are written in <code>MIGRATION.md</code>.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="subagents">Subagents, hub-and-spoke</button>
+        <button class="vbtn" data-pick="team">An agent team</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="subagents"><span class="verdict-tag" data-v="pass">Right call</span><p>The modules are independent and the shared context is already in a file. Nobody has anything to negotiate, so a mesh would add channels with nothing to carry. Hub-and-spoke with a contract does it at a fraction of the tokens, and 14 is under the default of 20 concurrent subagents.</p></div>
+        <div class="vfb" data-for="team"><span class="verdict-tag" data-v="fail">Not quite</span><p>The docs suggest 3–5 teammates, and this wave wants 14. Even at 5, teammates would have nothing to say to each other, and you would pay around 7x the tokens for the ability to say it. Teams earn their cost on coupled work.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Which statement about Claude Code agent teams is true?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">A teammate can start its own team to split its task further.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">You can launch a team from a <code>claude -p</code> script for a nightly run.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Teammates message each other by name and share a task list whose tasks can depend on other tasks.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Teammates share the lead's context window, which is why they can coordinate.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>Teams cannot be nested, and a session runs one team. When you need depth, use a hierarchy of subagents or, in Week 4, workflows.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Teams are not available in <code>-p</code> mode or through the SDK. For scripted runs, use headless sessions (Lesson 12) or a workflow (Lesson 16).</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>Direct messages plus a shared task list with statuses and dependencies is what makes a team a mesh. Subagents have neither.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Each teammate is a separate Claude Code instance with its own context. They coordinate through messages and the task list, which is exactly why messages cost tokens on both ends.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-13">
+    <div class="lab__head">
+      <span class="label">Lab 13 · In Claude Code (experimental feature)</span>
+      <span class="lab__meta">~25 min · est. $3.00–$10.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port the pipeline chain (<code>steps</code>, <code>runner</code>, <code>cli</code>) with a lead and three teammates who settle interfaces by message, then compare cost and outcome with Lesson 11's hub-and-spoke run.</p>
+      <ol class="lab__steps">
+        <li><p>Confirm where you are. Only the pipeline chain should be left.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Start a session with teams enabled. The variable applies only to this launch.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --model opus</code></pre></div>
+        </li>
+        <li><p>Ask the lead for the team. The single-writer rule from Lesson 12 still holds: only the lead touches the barrel and <code>MIGRATION.md</code>.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Create an agent team with three teammates named steps, runner and cli. Put three tasks on the shared task list:
+1. Port kestrel/pipeline/steps.py and its tests. Owner: steps.
+2. Port kestrel/pipeline/runner.py and its tests. Owner: runner. Depends on task 1.
+3. Port kestrel/cli.py and its tests. Owner: cli. Depends on task 2.
+Rules for every teammate: follow MIGRATION.md. A task is complete only when scripts/verify.sh on its Python module exits 0. Only the lead edits ts/src/index.ts and MIGRATION.md; send the lead your export line and any new trap. While your task is blocked, read your Python module and its tests, then message the teammate upstream of you to agree the exact TypeScript names and signatures you will import. Keep messages short and about interfaces only. Report to the lead when your task completes. The cli teammate must make ts/src/cli.ts runnable as `npx tsx src/cli.ts &lt;in&gt; &lt;out&gt; "&lt;spec&gt;"` from inside ts/, with the same exit codes as kestrel/cli.py, because scripts/difftest.py calls it that way.</code></pre></div>
+        </li>
+        <li><p>Watch the messages. Look for the moment <code>runner</code> asks <code>steps</code> how a step is represented, and note whether the answer changes anything in <code>steps</code>. When all three tasks are complete, check the repo and the bill.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+          <div class="cmd"><pre><code>python scripts/status.py</code></pre></div>
+        </li>
+        <li><p>Ask the lead for a retrospective, then add a row to <code>notes/baseline.md</code> with modules, cost, wall-clock and message count beside your Lesson 11 row.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Summarize the team run: how many messages did teammates send each other, what did they agree on, and did any message prevent a mismatch between steps, runner and cli before code was written? Then estimate whether a hub-and-spoke run with porter subagents in sequence would have cost more or less for these three modules, and why.</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>The <code>runner</code> and <code>cli</code> tasks show as blocked at first, and those teammates read Python and send interface questions while they wait. When <code>steps</code> finishes, <code>runner</code> starts, then <code>cli</code>. <code>status.py</code> ends with all 24 modules ported and passing. Cost per module will be well above your Lesson 11 subagent run; whether the interface talk earned that back is the judgment this lab is for. If agent teams are unavailable in your version, run the same three tasks in order with your porter subagent instead (one at a time, since each depends on the last), so the pipeline is ported before Lesson 15.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Add a <code>TaskCompleted</code> hook in <code>.claude/settings.local.json</code> that runs <code>python scripts/status.py</code> and logs its output, so every task completion leaves a measured record next to the teammate's claim.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Choose who talks to whom on purpose. Hub-and-spoke and files cover independent work cheaply; a mesh earns its square-law cost only when workers must settle something with each other mid-task, as adjacent pipeline modules do.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 14 · Keeping agents out of each other's way. Worktrees, file ownership, and the barrel file that every porter wants to edit.</div>
+</section>

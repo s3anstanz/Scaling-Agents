@@ -1,0 +1,203 @@
+<section class="lesson" id="lesson-02" data-week="1" data-title="Designing the loop" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 02</span>
+    <span class="meta">Week 1 · One agent</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="1">1 agent</span>
+  </div>
+  <h1>Designing the loop</h1>
+  <p class="lesson__deck">A loop is defined by how it ends. This lesson covers the four stop conditions every agent run needs, what happens inside each iteration, and the three ways a loop goes wrong when a stop condition is missing.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Four ways to stop</h2>
+  <p>In Lesson 01 the agent stopped because it decided to. That is fine when it decides well. <b>Loop engineering</b> is the practice of designing the loop deliberately: what ends it, what happens on each pass, and where the checks sit. It starts with stop conditions, because a loop without good exits will eventually either quit too soon or never quit.</p>
+  <p>There are four exits worth designing for. Only one of them means the work is good. The other three are guard rails that end a run that is not getting there.</p>
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Stop condition</th><th>On Kestrel</th><th>Enforced by</th><th>What it catches</th></tr></thead>
+    <tbody>
+      <tr><td><b>Success check</b></td><td><code>scripts/verify.sh kestrel/core/mathutil.py</code> exits 0</td><td>The agent, because the prompt says so (made mechanical in Lesson 04)</td><td>The normal, happy ending. The only exit that tells you the port is right.</td></tr>
+      <tr><td><b>Turn cap</b></td><td><code>--max-turns 20</code></td><td>Claude Code</td><td>Runs that never converge, such as an agent porting half the library to satisfy one import.</td></tr>
+      <tr><td><b>Budget cap</b></td><td><code>--max-budget-usd 1</code></td><td>Claude Code</td><td>Runs that converge too slowly or read far too much. The cap is a client-side estimate and can overshoot by one step.</td></tr>
+      <tr><td><b>No progress</b></td><td>The same test fails the same way twice in a row</td><td>The agent, because the prompt says so (scripted in Weeks 2 and 4)</td><td>Thrashing: edits that undo each other while the turn counter climbs.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">The cap values are the ones used in this lesson's lab. Pick yours from the size of the task.</p>
+  <p>Notice the split in the third column. Two exits are enforced by the harness and cannot be argued with. Two depend on the agent following instructions. A well-designed loop moves the important ones into machinery over time, which is the arc of this week: the success check becomes a Stop hook in Lesson 04, and no-progress detection becomes code in later weeks.</p>
+
+  <h2><span class="h2num">Part two</span>What happens in one iteration</h2>
+  <p>It helps to know exactly what the harness does on each pass, because every cost and every failure happens somewhere in this sequence. In headless mode (<code>claude -p</code>), one iteration looks like this.</p>
+  <ol>
+    <li><b>Call the model</b> with everything so far: system prompt, <code>CLAUDE.md</code>, your prompt, and every earlier tool request and result.</li>
+    <li><b>Read the reply.</b> If it contains no tool request, the run is over and the reply becomes the result.</li>
+    <li><b>Check permissions.</b> Is the requested tool allowed? In headless mode there is nobody to ask, so a tool that is not allowed is refused and the refusal goes back to the model as a result.</li>
+    <li><b>Run the tool</b> and capture its output.</li>
+    <li><b>Append</b> the request and the output to the conversation.</li>
+    <li><b>Check the caps.</b> Turn count and estimated spend. If either is exceeded, the run ends here.</li>
+  </ol>
+  <p>Step 1 is where the money goes, and it tends to get more expensive as the run goes on, because each call carries the whole conversation so far. Twenty turns are not twenty equal steps. A run that reads every file in <code>kestrel/</code> early pays for that reading on every later call. Lesson 03 is about that problem.</p>
+  <p>Step 3 is where headless runs most often go quietly wrong. If <code>Bash(scripts/*)</code> is not allowed, the agent cannot run <code>verify.sh</code>. It may then report success based on reading its own code, which is the first failure mode below. That is why every headless command in this course passes <code>--allowedTools</code> explicitly.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 240" role="img" aria-label="Porting mathutil: read, edit, verify, with the verify result checked against four stop conditions before looping back">
+          <g class="g-node g-node--worker" data-node="read"><rect x="20" y="95" width="120" height="50" rx="8"/><text x="80" y="125">Read files</text></g>
+          <g class="g-node g-node--worker" data-node="edit"><rect x="190" y="95" width="120" height="50" rx="8"/><text x="250" y="125">Edit TS</text></g>
+          <g class="g-node g-node--check" data-node="verify"><rect x="360" y="95" width="120" height="50" rx="8"/><text x="420" y="125">verify.sh</text></g>
+          <g class="g-node g-node--check" data-node="pass"><rect x="560" y="10" width="140" height="40" rx="8"/><text x="630" y="35">Tests pass</text></g>
+          <g class="g-node g-node--data" data-node="turns"><rect x="560" y="65" width="140" height="40" rx="8"/><text x="630" y="90">Turn cap</text></g>
+          <g class="g-node g-node--data" data-node="budget"><rect x="560" y="120" width="140" height="40" rx="8"/><text x="630" y="145">Budget cap</text></g>
+          <g class="g-node g-node--data" data-node="noprog"><rect x="560" y="175" width="140" height="40" rx="8"/><text x="630" y="200">No progress</text></g>
+          <path class="g-edge" data-edge="e1" d="M140 120 L190 120"/>
+          <path class="g-edge" data-edge="e2" d="M310 120 L360 120"/>
+          <path class="g-edge g-edge--loop" data-edge="e3" d="M420 145 C 420 200, 80 200, 80 145"/>
+          <path class="g-edge g-edge--faint" data-edge="g1" d="M480 108 C 520 108, 520 30, 560 30"/>
+          <path class="g-edge g-edge--faint" data-edge="g2" d="M480 114 C 520 114, 520 85, 560 85"/>
+          <path class="g-edge g-edge--faint" data-edge="g3" d="M480 126 C 520 126, 520 140, 560 140"/>
+          <path class="g-edge g-edge--faint" data-edge="g4" d="M480 132 C 520 132, 520 195, 560 195"/>
+          <text class="g-cap" x="190" y="225">failed: go around again</text>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="read" data-edges="">Iteration 1 begins. The agent reads <code>kestrel/core/mathutil.py</code>, <code>tests/core/test_mathutil.py</code> and <code>MIGRATION.md</code>.</li>
+        <li data-on="read,edit" data-edges="e1">It writes <code>ts/src/core/mathutil.ts</code>. <code>floor_div</code> becomes <code>Math.trunc(a / b)</code>, which is correct for every positive input it thinks of.</li>
+        <li data-on="edit,verify" data-edges="e2"><code>verify.sh</code> exits 1. The TypeScript test for <code>floor_div(-7, 2)</code> expects <code>-4</code> and gets <code>-3</code>. Python's <code>//</code> floors toward negative infinity; <code>Math.trunc</code> cuts toward zero. This is trap T2.</li>
+        <li data-on="verify,pass,turns,budget,noprog" data-edges="g1,g2,g3,g4">Before going around again, every exit is checked. Tests pass? No. Turn 7 of 20, about $0.15 of $1 (illustrative numbers): under both caps. The failure is new, so there is progress. Keep going.</li>
+        <li data-on="verify,read,edit" data-edges="e3,e1">Iteration 2. The agent rereads the <code>floor_div</code> docstring, switches to <code>Math.floor(a / b)</code> and keeps the divide-by-zero error the Python raises.</li>
+        <li data-on="verify,pass" data-edges="e2,g1"><code>verify.sh</code> exits 0. The success check fires, so the agent stops and writes its report. Two passes of the outer loop, around a dozen tool calls.</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Three ways a loop fails</h2>
+  <p>Each missing stop condition produces a recognisable failure. Once you can name them, you will see them in transcripts everywhere.</p>
+  <p><b>Stopping early.</b> The agent reports success because the work looks done. It wrote <code>mathutil.ts</code>, the code reads well, and it says so. Or it ran the Python tests, saw them pass, and took that as the answer, though the Python side was never in doubt. The cause is a missing or vague success check. A prompt that says <i>port mathutil</i> invites this. A prompt that says <i>run scripts/verify.sh kestrel/core/mathutil.py until it exits 0</i> makes it much less likely, and Lesson 04 makes it close to impossible.</p>
+  <p><b>Never stopping.</b> The agent keeps working on something that cannot be finished inside the task. A common Kestrel version: you ask for <code>geometry.py</code> before <code>mathutil</code> is ported. The TypeScript import fails, so the agent ports <code>mathutil</code> too, then notices <code>errors</code> is missing and ports that, and the scope keeps widening. Each step is reasonable. The run as a whole is not what you asked for. The turn cap and budget cap end it; the real fix is giving tasks in dependency order, which is what <code>scripts/deps.py --layers</code> is for.</p>
+  <p><b>Thrashing.</b> The agent alternates between fixes. It changes <code>floorDiv</code> to <code>Math.floor</code>, a different test fails, it changes back to <code>Math.trunc</code>, the first test fails again. Every iteration looks like work. No-progress detection catches it: if the same failure comes back, stop and report it rather than trying again. That report is worth more than another ten turns, because it tells a human (or, later, a reviewer agent) exactly where the agent got stuck.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>You run a headless port with <code>--max-turns 20</code>. The agent needs 25 turns to finish. When the run ends at turn 20, what state is the repo in?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Exactly as the agent left it at turn 20. A cap ends the loop; it does not undo anything. You may have a half-edited <code>mathutil.ts</code>, a test file that does not compile, and a new line in <code>ts/src/index.ts</code> pointing at it. The JSON output tells you the run ended on a limit rather than a success (look at <code>is_error</code> and <code>subtype</code>), but the files are your problem. This is why the labs commit a git checkpoint before each run, and why, from Week 3 on, agents work in isolated copies of the repo.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Writing the loop into the command</h2>
+  <p>For one agent, you design the loop in two places: the prompt, which carries the success check and the no-progress rule, and the command line, which carries the caps. Here is the shape of the command you will run in the lab.</p>
+
+  <div class="c-code wide" data-component="code">
+    <div class="c-code__head"><span>headless port of mathutil</span><span class="tag">Click a marked line</span></div>
+    <div class="c-code__grid">
+      <ol class="c-code__lines">
+        <li><button class="cl" data-note="n1"><span class="ln">1</span><pre>claude -p <span class="tk-str">"Port kestrel/core/mathutil.py … Run scripts/verify.sh kestrel/core/mathutil.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report it …"</span> \</pre></button></li>
+        <li><button class="cl" data-note="n2"><span class="ln">2</span><pre>  --model sonnet \</pre></button></li>
+        <li><button class="cl" data-note="n3"><span class="ln">3</span><pre>  --max-turns <span class="tk-num">20</span> --max-budget-usd <span class="tk-num">1</span> \</pre></button></li>
+        <li><button class="cl" data-note="n4"><span class="ln">4</span><pre>  --output-format json \</pre></button></li>
+        <li><button class="cl" data-note="n5"><span class="ln">5</span><pre>  --permission-mode acceptEdits \</pre></button></li>
+        <li><button class="cl" data-note="n6"><span class="ln">6</span><pre>  --allowedTools <span class="tk-str">"Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)"</span> \</pre></button></li>
+        <li><div class="cl"><span class="ln">7</span><pre>  &gt; notes/runs/mathutil.json</pre></div></li>
+      </ol>
+      <div class="c-code__notes">
+        <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line.</p></div>
+        <div class="cnote" data-note="n1"><div class="label">Line 1 · the prompt carries two exits</div><p><code>-p</code> runs one task with no interactive session. The prompt names the success check as a command with an exit code, and the no-progress rule as a concrete trigger. Both depend on the model following them, which is why the caps below exist.</p></div>
+        <div class="cnote" data-note="n2"><div class="label">Line 2 · fix the model</div><p>Pinning the model makes runs comparable. The baseline you build this week uses <code>sonnet</code> throughout, so Week 2 can compare cheaper and pricier workers against it.</p></div>
+        <div class="cnote" data-note="n3"><div class="label">Line 3 · the harness exits</div><p>The turn cap and budget cap are enforced by Claude Code, whatever the model thinks. The budget is a client-side estimate and can run over by one step, so treat it as a ceiling with a small margin.</p></div>
+        <div class="cnote" data-note="n4"><div class="label">Line 4 · a machine-readable result</div><p>JSON output includes <code>num_turns</code> and <code>total_cost_usd</code>, plus fields saying whether the run ended in an error. This is how you measure a loop instead of guessing.</p></div>
+        <div class="cnote" data-note="n5"><div class="label">Line 5 · edits without prompts</div><p>In headless mode nobody can approve an edit. <code>acceptEdits</code> lets file edits through so the loop can actually change code.</p></div>
+        <div class="cnote" data-note="n6"><div class="label">Line 6 · the tools the loop needs</div><p>Reading, writing, and the exact shell commands the success check uses. Without <code>Bash(scripts/*)</code> the agent could not run <code>verify.sh</code>, and the success check would silently disappear.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>An agent porting <code>mathutil</code> keeps switching <code>floorDiv</code> between <code>Math.trunc</code> and <code>Math.floor</code>, failing a different test each time. Which stop condition ends this run soonest and leaves you the most useful result?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">The success check</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">The turn cap</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">The budget cap</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="true"><span class="k">D</span><span class="t">The no-progress rule</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The success check never fires here, because the tests never all pass. That is the whole problem with thrashing: the good exit is out of reach.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>The turn cap will end it, eventually, after spending every remaining turn. You also get no explanation, only a run that hit its limit with the code in whichever state the last flip left it.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Same as the turn cap, measured in dollars. It is a backstop for runaway cost. It says nothing about why the agent was stuck.</p></div>
+        <div class="fb" data-fb="d" data-verdict="right"><div class="vd">Yes</div><p>The first time the same failure comes back, the agent stops and reports which test fails and what it tried. That is cheaper than the caps and far more useful: it points straight at the disagreement (here, two tests that need different rounding behaviour), which a human or a reviewer can resolve.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-02">
+    <div class="lab__head">
+      <span class="label">Lab 02 · In Claude Code</span>
+      <span class="lab__meta">~15 min · est. $0.30–$1.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port the two wave-L0 modules, <code>errors</code> and <code>mathutil</code>, with bounded headless runs, and read the loop's numbers from the JSON.</p>
+      <ol class="lab__steps">
+        <li><p>From the <code>kestrel-starter</code> root, activate the environment and make a folder for run records.</p>
+          <div class="cmd"><pre><code>source .venv/bin/activate
+mkdir -p notes/runs</code></pre></div>
+        </li>
+        <li><p>Create a small script that prints the loop numbers from any run file. You will reuse it all week.</p>
+          <div class="cmd" data-file="scripts/runinfo.py"><pre><code>import json
+import sys
+
+for path in sys.argv[1:]:
+    with open(path) as f:
+        run = json.load(f)
+    print(path)
+    for key in ("subtype", "is_error", "num_turns", "total_cost_usd"):
+        print(f"  {key}: {run.get(key)}")</code></pre></div>
+        </li>
+        <li><p>Port <code>errors</code>, the smallest module, timing the run. <code>$SECONDS</code> works in bash and zsh.</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude -p "Port kestrel/core/errors.py to TypeScript at ts/src/core/errors.ts, following MIGRATION.md. Port its tests from tests/core/test_errors.py to ts/test/core/errors.test.ts, and add the module's export line to ts/src/index.ts. Run scripts/verify.sh kestrel/core/errors.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with three lines: what you ported, how many verify runs it took, and any Python-vs-JavaScript difference you had to handle." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/errors.json
+echo "errors $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
+python scripts/runinfo.py notes/runs/errors.json</code></pre></div>
+        </li>
+        <li><p>Now <code>mathutil</code>. It holds the two helpers that exist because of traps: <code>round_half_even</code> (T1) and <code>floor_div</code> (T2).</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude -p "Port kestrel/core/mathutil.py to TypeScript at ts/src/core/mathutil.ts, following MIGRATION.md. Port its tests from tests/core/test_mathutil.py to ts/test/core/mathutil.test.ts, and add the module's export line to ts/src/index.ts. Run scripts/verify.sh kestrel/core/mathutil.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with three lines: what you ported, how many verify runs it took, and any Python-vs-JavaScript difference you had to handle." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/mathutil.json
+echo "mathutil $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt
+python scripts/runinfo.py notes/runs/mathutil.json</code></pre></div>
+        </li>
+        <li><p>Do not trust the report; run the exit condition yourself, then read the agent's final message and look at how it handled the two helpers.</p>
+          <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/errors.py; echo "exit=$?"
+scripts/verify.sh kestrel/core/mathutil.py; echo "exit=$?"
+grep -n -i -E -A4 "floor_?div|round_?half_?even" ts/src/core/mathutil.ts
+git diff MIGRATION.md</code></pre></div>
+        </li>
+        <li><p>Checkpoint the work so later labs can reset safely.</p>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 02: port errors and mathutil"
+python scripts/status.py</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Two run records with a small <code>num_turns</code> for <code>errors</code> and a larger one for <code>mathutil</code>, each well under $1. Both <code>verify.sh</code> calls print <code>exit=0</code>. In the <code>mathutil</code> report, look for T2: a first attempt with <code>Math.trunc</code> that failed on negative inputs, or a note that <code>Math.floor</code> was needed. You may also see T1, since <code>Math.round(2.5)</code> is 3 while <code>round_half_even(2.5)</code> must be 2; a naive port fails the <code>round_half_even</code>, <code>floor_div</code> and <code>mean_int</code> tests. If the agent got both right on the first try, it probably read the docstrings carefully; the test still checked it. <code>CLAUDE.md</code> tells agents to add a bullet to Known traps in <code>MIGRATION.md</code> when they find a difference, so <code>git diff MIGRATION.md</code> may already show one. Lab 03 tidies those entries up. <code>status.py</code> now shows two ported modules.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>See a cap fire. Remove the mathutil port with <code>git rm -q ts/src/core/mathutil.ts ts/test/core/mathutil.test.ts</code>, rerun step 4 with <code>--max-turns 3</code> writing to <code>notes/runs/cap-test.json</code> (and skip the <code>seconds.txt</code> line), inspect it with <code>runinfo.py</code>, then restore everything with <code>git reset -q --hard</code>.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Give every run one good exit (a command that passes) and three guard rails (turns, budget, no progress). Caps end a run; they do not clean up after it, so checkpoint before you start.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 03 · Context is the bottleneck. What the agent sees decides what it can get right, and more is not better.</div>
+</section>

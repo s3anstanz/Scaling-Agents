@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install ruff==0.17.0
+      - name: Ruff
+        run: ruff check .
+      - name: ShellCheck
+        run: shellcheck kestrel-starter/scripts/*.sh ci/*.sh
+
+  starter-python:
+    name: Starter · Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: kestrel-starter
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install pytest==9.1.1
+      - name: Reference tests
+        run: python -m pytest -q
+      - name: Lab scripts behave as the course describes
+        run: |
+          python scripts/deps.py --layers | tee layers.txt
+          test "$(grep -c '^L[0-9]' layers.txt)" -eq 7
+          grep -q '^L3 (14)' layers.txt
+          python scripts/deps.py --critical | grep -q '(7 modules)'
+          python scripts/status.py --no-run | grep -q '0/24 modules ported'
+          test "$(python scripts/status.py --next --no-run | tr '\n' ' ')" = "core/errors core/mathutil "
+
+  starter-typescript:
+    name: Starter · TypeScript and trap guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: kestrel-starter/ts/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install pytest==9.1.1
+      - name: Install the pinned toolchain
+        working-directory: kestrel-starter/ts
+        run: npm ci
+      - name: Type-check
+        working-directory: kestrel-starter/ts
+        run: npm run typecheck
+      - name: Planted traps still catch a naive port
+        run: ci/check_traps.sh
+
+  course:
+    name: Course · build, structure and browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: course
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: course/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Build the course page
+        run: python3 build.py
+      - name: Lesson structure and workflow scripts
+        run: python3 tests/check_course.py
+      - name: Browser smoke test
+        run: node tests/smoke.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scaling-agents-course
+          path: course/dist/scaling-agents.html
+          retention-days: 14
+
+  all-checks:
+    name: All checks pass
+    if: always()
+    needs: [lint, starter-python, starter-typescript, course]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Every required job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do [ "$r" = success ] || exit 1; done

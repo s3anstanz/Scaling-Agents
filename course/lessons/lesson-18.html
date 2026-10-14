@@ -1,0 +1,326 @@
+<section class="lesson" id="lesson-18" data-week="4" data-title="Loops at scale" data-minutes="17">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 18</span>
+    <span class="meta">Week 4 · Scale</span>
+    <span class="meta">~17 min</span>
+    <span class="scale" data-scale="100">100 agents</span>
+  </div>
+  <h1>Loops at scale</h1>
+  <p class="lesson__deck">With one agent, a failure is an event. With a hundred, failure is the weather. This lesson takes the loop engineering from Week 1 and rebuilds it for a fleet: retries that learn, runs that are safe to repeat, a breaker that stops a doomed wave, and budgets that hold.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Something is always failing</h2>
+  <p>Suppose each agent run has a 3% chance of failing for reasons that have nothing to do with your code: a timeout, a confused turn, a tool call that went sideways. That number is illustrative, but the arithmetic is not. Across 100 agents you should expect about three such failures per run, and the chance that all 100 succeed is 0.97 to the power of 100, which is under 5%. At scale, "everything worked" is the rare case. Your design has to treat failure as normal traffic.</p>
+  <p>Not all failures are alike, and each kind wants a different response. Getting this wrong is expensive in both directions. Retrying a deterministic failure burns money. Giving up on a transient one wastes the work around it.</p>
+
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Kind</th><th>Kestrel example</th><th>Signal</th><th>Response</th></tr></thead>
+      <tbody>
+        <tr><td>Transient</td><td>An agent stops early or returns nothing</td><td><code>agent()</code> returns <code>null</code>; no clear error</td><td>Retry once, as is</td></tr>
+        <tr><td>Deterministic</td><td><code>ops/blur</code> uses <code>Math.round</code> and fails T1</td><td>Same assertion fails again</td><td>Retry with the error in the prompt, then escalate the model or stop</td></tr>
+        <tr><td>Upstream</td><td><code>core/image.ts</code> is broken, so every op fails</td><td>Many modules fail at once, all pointing at the same dependency</td><td>Stop the wave. Fix the dependency. Rerun</td></tr>
+        <tr><td>Runaway</td><td>An agent rewrites <code>blur.ts</code> for 60 turns</td><td>Turns and cost climb with no new passing tests</td><td>Turn caps, budgets, and a kill switch</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Classify first, respond second. Most of this lesson is about telling the third row apart from the second.</p>
+
+  <h2><span class="h2num">Part two</span>Retries with a cap, and runs that are safe to repeat</h2>
+  <p>A retry is an experiment. Running the same prompt against the same failure is the same experiment twice, and it usually gets the same answer. So every retry carries new information: the exact failing line from <code>scripts/verify.sh</code>, pasted into the prompt. That turns a blind repeat into the evaluator-optimizer loop from Lesson 10, where the verify script plays evaluator.</p>
+  <p>Retries also need a cap. Two extra attempts is a sensible default for porting. If a module has failed three times with the error in front of it, something is wrong that a cheap worker will not fix on attempt four. Escalate it to a stronger model, or report it red and let a human look.</p>
+  <p>The second half of recovery is <b>idempotency</b>. An operation is idempotent when doing it twice has the same effect as doing it once. For a Kestrel porter, that means three habits. It checks <code>scripts/status.py</code> before touching anything and skips modules that are already green. It writes only its own module's files, so a second run overwrites rather than duplicates. And it never appends to shared files, because an append done twice is two appends. With those habits in place, the universal recovery for any interrupted run becomes "run it again". Pressing <code>x</code> in <code>/workflows</code> stops being scary.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>A workflow is porting the 14 modules of wave L3. Nine are green when your laptop sleeps and the run dies. You start it again. What happens if the porters are idempotent? What happens if they are not, and each one also appends its export line to <code>ts/src/index.ts</code>?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Idempotent: nine agents check status, return <code>skipped</code> within a turn or two, and the five unfinished modules get ported. You pay a little for the checks and nothing for rework. Not idempotent: all 14 port again from scratch, which roughly doubles the cost of the wave. Worse, the nine finished modules now have two identical <code>export</code> lines each in the barrel, so the TypeScript build breaks on code that was green an hour ago. This is why Lesson 14 moved barrel edits to a single integrator.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>Circuit breakers</h2>
+  <p>A circuit breaker in your house cuts the power when too much current flows, before the wiring melts. The software version does the same thing for failures. It watches the failure rate, and when the rate crosses a threshold it stops sending work into a system that is clearly broken.</p>
+  <p>Kestrel's dependency graph makes this essential. Every module in wave L3 (twelve ops and two io readers) imports <code>core/image</code>. If <code>image.ts</code> is broken, all 14 will fail, and each porter will spend its full turn budget discovering that. Worse, a well-meaning porter may try to "fix" <code>image.ts</code> itself. Fourteen agents patching one shared file in fourteen different ways is how a single bug becomes a merge disaster.</p>
+  <p>The defence has three parts. First, send a small <b>canary</b> batch: three modules go ahead of the rest. Second, teach porters a <code>blocked</code> status. A porter that sees a broken dependency stops and reports it, and it never edits outside its module. Third, the <b>breaker</b>: if more than 30% of the canaries come back failed or blocked, the rest of the wave never starts. The 30% threshold is illustrative. Start there, and tune it once you know your normal failure rate.</p>
+
+  <div class="ex wide c-stepper" data-component="stepper">
+    <div class="ex__head"><span class="dot"></span><span class="label">Step through it</span></div>
+    <div class="ex__body">
+      <div class="stepper__view">
+        <svg viewBox="0 0 720 260" role="img" aria-label="A canary batch of three porters feeds a breaker check, which either releases eleven more porters or stops the wave and alerts a human.">
+          <g class="g-node g-node--data" data-node="find"><rect x="20" y="105" width="120" height="50" rx="8"/><text x="80" y="135">status.py</text></g>
+          <g class="g-node g-node--worker" data-node="c1"><rect x="190" y="30" width="120" height="44" rx="8"/><text x="250" y="57">Canary blur</text></g>
+          <g class="g-node g-node--worker" data-node="c2"><rect x="190" y="108" width="120" height="44" rx="8"/><text x="250" y="135">Canary crop</text></g>
+          <g class="g-node g-node--worker" data-node="c3"><rect x="190" y="186" width="120" height="44" rx="8"/><text x="250" y="213">Canary flip</text></g>
+          <g class="g-node g-node--check" data-node="breaker"><rect x="360" y="105" width="110" height="50" rx="8"/><text x="415" y="135">Breaker</text></g>
+          <g class="g-node g-node--worker" data-node="rest"><rect x="530" y="40" width="170" height="50" rx="8"/><text x="615" y="70">11 more porters</text></g>
+          <g class="g-node g-node--human" data-node="stop"><rect x="530" y="170" width="170" height="50" rx="8"/><text x="615" y="200">Stop, tell you</text></g>
+          <path class="g-edge" data-edge="e1" d="M140 130 C 165 130, 165 52, 190 52"/>
+          <path class="g-edge" data-edge="e2" d="M140 130 L190 130"/>
+          <path class="g-edge" data-edge="e3" d="M140 130 C 165 130, 165 208, 190 208"/>
+          <path class="g-edge g-edge--loop" data-edge="r1" d="M282 30 C 290 4, 210 4, 218 30"/>
+          <path class="g-edge" data-edge="e4" d="M310 52 C 335 52, 335 125, 360 125"/>
+          <path class="g-edge" data-edge="e5" d="M310 130 L360 130"/>
+          <path class="g-edge" data-edge="e6" d="M310 208 C 335 208, 335 135, 360 135"/>
+          <path class="g-edge" data-edge="e7" d="M470 120 C 500 120, 500 65, 530 65"/>
+          <path class="g-edge" data-edge="e8" d="M470 140 C 500 140, 500 195, 530 195"/>
+        </svg>
+      </div>
+      <ol class="stepper__frames">
+        <li data-on="find" data-edges="">A scout agent runs <code>scripts/status.py --next</code> and gets the 14 modules of wave L3. Today, unknown to anyone, <code>image.ts</code> has a broken pixel accessor.</li>
+        <li data-on="find,c1,c2,c3" data-edges="e1,e2,e3">Three canaries start: <code>blur</code>, <code>crop</code>, <code>flip</code>. The other eleven wait. Each canary first checks status, so a rerun would skip anything already green.</li>
+        <li data-on="c1" data-edges="r1"><code>blur</code> fails <code>verify.sh</code> and does not spot the cause. It gets a retry with the failing line pasted in, then a second. Still red after the cap of two.</li>
+        <li data-on="c2,c3" data-edges=""><code>crop</code> and <code>flip</code> trace their failures into <code>image.ts</code>. Following the rules, they return <code>blocked</code> without editing it. Blocked modules get no retries.</li>
+        <li data-on="c1,c2,c3,breaker" data-edges="e4,e5,e6">The breaker counts three red out of three. 100% is far above the 30% threshold.</li>
+        <li data-on="breaker,stop" data-edges="e8">The wave stops. Eleven porters never start. The report names the shared cause, <code>image.ts</code>. You fix it and rerun, and idempotency makes the rerun safe.</li>
+        <li data-on="breaker,rest" data-edges="e7">On a healthy day, zero or one canary is red, which is under the threshold, and the other eleven start. The canary cost you a few minutes of wall-clock and nothing else.</li>
+      </ol>
+    </div>
+  </div>
+
+  <p>Here is the whole pattern in one workflow: idempotent porters, capped retries with new information, a canary batch, a breaker, a budget guard, and a final reconcile against the repo. Click the marked lines.</p>
+
+  <div class="c-code wide" data-component="code">
+  <div class="c-code__head"><span>.claude/workflows/port-guarded.js</span><span class="tag">Click a marked line</span></div>
+  <div class="c-code__grid">
+    <ol class="c-code__lines">
+      <li><div class="cl"><span class="ln">1</span><pre><span class="tk-kw">export</span> <span class="tk-kw">const</span> meta = {</pre></div></li>
+      <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">name</span>: <span class="tk-str">'port-guarded'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">3</span><pre>  <span class="tk-key">description</span>: <span class="tk-str">'Port the ready wave with idempotent agents, capped retries, a canary batch and a circuit breaker'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">4</span><pre>  <span class="tk-key">phases</span>: [{ <span class="tk-key">title</span>: <span class="tk-str">'Find'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Canary'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Wave'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Report'</span> }]</pre></div></li>
+      <li><div class="cl"><span class="ln">5</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">6</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n1"><span class="ln">7</span><pre><span class="tk-kw">const</span> BREAKER = <span class="tk-num">0.3</span></pre></button></li>
+      <li><button class="cl" data-note="n2"><span class="ln">8</span><pre><span class="tk-kw">const</span> CANARIES = <span class="tk-num">3</span></pre></button></li>
+      <li><button class="cl" data-note="n3"><span class="ln">9</span><pre><span class="tk-kw">const</span> MAX_FIXES = <span class="tk-num">2</span></pre></button></li>
+      <li><div class="cl"><span class="ln">10</span><pre><span class="tk-kw">const</span> list = { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } }</pre></div></li>
+      <li><div class="cl"><span class="ln">11</span><pre><span class="tk-kw">const</span> resultSchema = {</pre></div></li>
+      <li><div class="cl"><span class="ln">12</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">13</span><pre>  <span class="tk-key">properties</span>: {</pre></div></li>
+      <li><div class="cl"><span class="ln">14</span><pre>    <span class="tk-key">module</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> },</pre></div></li>
+      <li><div class="cl"><span class="ln">15</span><pre>    <span class="tk-key">status</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span>, <span class="tk-key">enum</span>: [<span class="tk-str">'passed'</span>, <span class="tk-str">'failed'</span>, <span class="tk-str">'skipped'</span>, <span class="tk-str">'blocked'</span>] },</pre></div></li>
+      <li><div class="cl"><span class="ln">16</span><pre>    <span class="tk-key">error</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> }</pre></div></li>
+      <li><div class="cl"><span class="ln">17</span><pre>  },</pre></div></li>
+      <li><div class="cl"><span class="ln">18</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'module'</span>, <span class="tk-str">'status'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">19</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">20</span><pre><span class="tk-kw">const</span> RULES = <span class="tk-str">'Edit only this module\'s files under ts/src and ts/test. Never edit a dependency, ts/src/index.ts or MIGRATION.md. '</span> +</pre></div></li>
+      <li><button class="cl" data-note="n4"><span class="ln">21</span><pre>  <span class="tk-str">'If a dependency\'s TS port looks broken, stop and return status "blocked" with the error.'</span></pre></button></li>
+      <li><div class="cl"><span class="ln">22</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">23</span><pre><span class="tk-kw">const</span> attempt = (m, note) =&gt; agent(</pre></div></li>
+      <li><button class="cl" data-note="n5"><span class="ln">24</span><pre>  <span class="tk-str">`${note} Module: ${m}. First run python scripts/status.py --json; if ${m} is already ported and passing, return "skipped" and edit nothing.</span></pre></button></li>
+      <li><div class="cl"><span class="ln">25</span><pre><span class="tk-str">Otherwise port it and its tests per MIGRATION.md, every Python test as it("test_name"). ${RULES}</span></pre></div></li>
+      <li><div class="cl"><span class="ln">26</span><pre><span class="tk-str">You are done only when scripts/verify.sh ${m} exits 0. Run it last; return "passed" only if it did, else put the first failing line in error.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">27</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">`port ${m}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: resultSchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">28</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">29</span><pre><span class="tk-kw">const</span> portWithRetry = <span class="tk-kw">async</span> (m) =&gt; {</pre></div></li>
+      <li><div class="cl"><span class="ln">30</span><pre>  <span class="tk-kw">let</span> r = <span class="tk-kw">await</span> attempt(m, <span class="tk-str">'Port this module.'</span>)</pre></div></li>
+      <li><button class="cl" data-note="n6"><span class="ln">31</span><pre>  <span class="tk-kw">for</span> (<span class="tk-kw">let</span> i = <span class="tk-num">1</span>; i &lt;= MAX_FIXES &amp;&amp; r?.status === <span class="tk-str">'failed'</span>; i++) {</pre></button></li>
+      <li><button class="cl" data-note="n7"><span class="ln">32</span><pre>    r = <span class="tk-kw">await</span> attempt(m, <span class="tk-str">`Attempt ${i + 1}. The last attempt failed with: ${r.error ?? 'no error captured'}. Read that failure first.`</span>)</pre></button></li>
+      <li><div class="cl"><span class="ln">33</span><pre>  }</pre></div></li>
+      <li><div class="cl"><span class="ln">34</span><pre>  <span class="tk-kw">return</span> r ?? { <span class="tk-key">module</span>: m, <span class="tk-key">status</span>: <span class="tk-str">'failed'</span>, <span class="tk-key">error</span>: <span class="tk-str">'agent returned nothing'</span> }</pre></div></li>
+      <li><div class="cl"><span class="ln">35</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">36</span><pre><span class="tk-kw">const</span> red = (rs) =&gt; rs.filter((r) =&gt; r.status === <span class="tk-str">'failed'</span> || r.status === <span class="tk-str">'blocked'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">37</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">38</span><pre>phase(<span class="tk-str">'Find'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">39</span><pre><span class="tk-kw">const</span> found = <span class="tk-kw">await</span> agent(<span class="tk-str">'Run python scripts/status.py --next. Return the module ids it prints, like ops/blur. Edit nothing.'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">40</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'find wave'</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">modules</span>: list }, <span class="tk-key">required</span>: [<span class="tk-str">'modules'</span>] } })</pre></div></li>
+      <li><div class="cl"><span class="ln">41</span><pre><span class="tk-kw">const</span> wave = found?.modules ?? []</pre></div></li>
+      <li><div class="cl"><span class="ln">42</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">43</span><pre>phase(<span class="tk-str">'Canary'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">44</span><pre><span class="tk-kw">let</span> results = (<span class="tk-kw">await</span> parallel(wave.slice(<span class="tk-num">0</span>, CANARIES).map((m) =&gt; () =&gt; portWithRetry(m)))).filter(Boolean)</pre></div></li>
+      <li><button class="cl" data-note="n8"><span class="ln">45</span><pre><span class="tk-kw">const</span> tripped = results.length &gt; <span class="tk-num">0</span> &amp;&amp; red(results).length / results.length &gt; BREAKER</pre></button></li>
+      <li><button class="cl" data-note="n9"><span class="ln">46</span><pre><span class="tk-kw">const</span> broke = budget.total &gt; <span class="tk-num">0</span> &amp;&amp; budget.remaining() &lt; budget.total * <span class="tk-num">0.2</span></pre></button></li>
+      <li><div class="cl"><span class="ln">47</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">48</span><pre><span class="tk-kw">if</span> (!tripped &amp;&amp; !broke) {</pre></div></li>
+      <li><div class="cl"><span class="ln">49</span><pre>  phase(<span class="tk-str">'Wave'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">50</span><pre>  <span class="tk-kw">const</span> rest = <span class="tk-kw">await</span> parallel(wave.slice(CANARIES).map((m) =&gt; () =&gt; portWithRetry(m)))</pre></div></li>
+      <li><div class="cl"><span class="ln">51</span><pre>  results = results.concat(rest.filter(Boolean))</pre></div></li>
+      <li><div class="cl"><span class="ln">52</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">53</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">54</span><pre>phase(<span class="tk-str">'Report'</span>)</pre></div></li>
+      <li><button class="cl" data-note="n10"><span class="ln">55</span><pre><span class="tk-kw">const</span> truth = <span class="tk-kw">await</span> agent(<span class="tk-str">`Run python scripts/gen_barrel.py, then python scripts/status.py --json. Which of these are ported with passing TS tests: ${JSON.stringify(wave)}? Edit nothing else.`</span>,</pre></button></li>
+      <li><div class="cl"><span class="ln">56</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'reconcile'</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span>, <span class="tk-key">schema</span>: { <span class="tk-key">type</span>: <span class="tk-str">'object'</span>, <span class="tk-key">properties</span>: { <span class="tk-key">passing</span>: list }, <span class="tk-key">required</span>: [<span class="tk-str">'passing'</span>] } })</pre></div></li>
+      <li><div class="cl"><span class="ln">57</span><pre><span class="tk-kw">const</span> passing = <span class="tk-kw">new</span> Set(truth?.passing ?? [])</pre></div></li>
+      <li><div class="cl"><span class="ln">58</span><pre><span class="tk-kw">for</span> (<span class="tk-kw">const</span> r <span class="tk-kw">of</span> results) {</pre></div></li>
+      <li><div class="cl"><span class="ln">59</span><pre>  <span class="tk-kw">if</span> ((r.status === <span class="tk-str">'passed'</span> || r.status === <span class="tk-str">'skipped'</span>) !== passing.has(r.module)) log(<span class="tk-str">`Mismatch on ${r.module}: agent said ${r.status}`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">60</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">61</span><pre><span class="tk-kw">if</span> (tripped) log(<span class="tk-str">`Breaker tripped: ${red(results).length}/${results.length} canaries red. First error: ${red(results)[0]?.error ?? 'n/a'}`</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">62</span><pre><span class="tk-kw">if</span> (broke) log(<span class="tk-str">'Budget guard: under 20% left after the canaries, wave not started.'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">63</span><pre>log(<span class="tk-str">`${passing.size}/${wave.length} green, ${wave.length - results.length} never started.`</span>)</pre></div></li>
+    </ol>
+    <div class="c-code__notes">
+      <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line to see why it is there.</p></div>
+      <div class="cnote" data-note="n1"><div class="label">Line 7 · breaker threshold</div><p>Stop the wave if more than 30% of the canaries fail or are blocked. The number is illustrative. Tune it to your own failure rate once you have one.</p></div>
+      <div class="cnote" data-note="n2"><div class="label">Line 8 · canary size</div><p>Three modules go first. If the shared dependency is broken, you find out after three agents, not fourteen.</p></div>
+      <div class="cnote" data-note="n3"><div class="label">Line 9 · retry cap</div><p>At most two extra attempts per module. A third retry with the same information rarely fixes what two did not.</p></div>
+      <div class="cnote" data-note="n4"><div class="label">Line 21 · blocked is not failed</div><p>A porter that finds a broken dependency stops and says so. It must not patch <code>image.ts</code> on its own, because 14 agents patching the same file in 14 ways is worse than the original failure.</p></div>
+      <div class="cnote" data-note="n5"><div class="label">Line 24 · idempotency</div><p>Every agent checks <code>scripts/status.py</code> before touching anything. Running the workflow twice is safe, so <i>rerun it</i> becomes the standard recovery.</p></div>
+      <div class="cnote" data-note="n6"><div class="label">Line 31 · retry only on failed</div><p>The loop retries <code>failed</code> and never <code>blocked</code>. Retrying a module whose dependency is broken burns money and teaches nothing.</p></div>
+      <div class="cnote" data-note="n7"><div class="label">Line 32 · retry with new information</div><p>Each retry gets the previous error in its prompt. A retry without new information is the same experiment run twice.</p></div>
+      <div class="cnote" data-note="n8"><div class="label">Line 45 · the breaker</div><p>Count the red canaries. Above the threshold, the rest of the wave never starts.</p></div>
+      <div class="cnote" data-note="n9"><div class="label">Line 46 · budget guard</div><p><code>budget.remaining()</code> tells the script how much of the run's budget is left. Below 20% after the canaries, it stops cleanly instead of running out halfway through a wave.</p></div>
+      <div class="cnote" data-note="n10"><div class="label">Line 55 · reconcile with the repo</div><p>The final word comes from <code>scripts/status.py</code>. Any mismatch with an agent's report is logged, because an agent that reports green while the repo shows red points to a bug in your process.</p></div>
+    </div>
+  </div>
+</div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>All three canaries come back red. Two say <code>blocked</code> with the error "<code>img.getPixel is not a function</code>" from <code>ts/src/core/image.ts</code>. What should the workflow do next?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Retry each canary twice more, with the error in the prompt</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Start the other eleven; three is too small a sample to judge</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Stop the wave and report the shared cause for a human to fix</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Spawn a fixer to edit <code>image.ts</code>, then continue the wave automatically</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The error is upstream. No amount of retrying <code>crop</code> fixes <code>image.ts</code>, and the porters are forbidden from editing it. Retries here buy six more failures.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Three out of three, with the same named dependency, is strong evidence. Starting eleven more agents to confirm it is the exact waste the canary exists to prevent.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>The breaker's job is to stop correlated failure early and hand over a clear cause. Fixing a dependency that every op relies on is a decision worth a human glance, and the idempotent rerun picks up from there.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Tempting, and sometimes right in a mature system. Here it lets an agent change a module that was green yesterday with nobody looking, mid-wave, based on one error message. A separate, deliberate run to repair <code>image</code> is safer.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Loop until dry</h2>
+  <p>Some loops have no test to pass. Finding traps is one. You cannot run a script that says "all the Python-versus-JavaScript differences have been found". For open-ended discovery, use a <b>loop-until-dry</b> stop condition: keep running discovery rounds until a set number of rounds in a row turn up nothing new, with a hard cap on rounds as a backstop.</p>
+  <p>For Kestrel, a round is four cheap agents, each scanning a quarter of <code>kestrel/</code> for semantics that differ between the languages and are not yet in <code>MIGRATION.md</code>'s Known traps. A single writer merges what they find. The run stops after two consecutive dry rounds or five rounds total. Here is what a run might look like (illustrative):</p>
+  <div class="trace wide">
+    <div class="trace__row" data-kind="result"><span class="trace__k">round 1</span><span class="trace__v">4 scanners · 3 new traps: banker's rounding (T1), negative modulo (T3), default sort order (T4)</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">round 2</span><span class="trace__v">4 scanners · 2 new: floor division (T2), PPM header comments (T5)</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">round 3</span><span class="trace__v">4 scanners · 0 new (1 duplicate of T1 rejected by the writer)</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">round 4</span><span class="trace__v">4 scanners · 0 new</span></div>
+    <div class="trace__row" data-kind="stop"><span class="trace__k">stop</span><span class="trace__v">two dry rounds in a row · 5 traps recorded · 16 scanner agents used</span></div>
+  </div>
+  <p>Two dry rounds instead of one, because one quiet round is often luck. A cap, because "until dry" with no cap is a runaway waiting to happen. And a single writer, because four scanners appending to the same file at once is the Lesson 12 conflict all over again.</p>
+
+  <h2><span class="h2num">Part five</span>Budgets and the kill switch</h2>
+  <p>Every loop needs a ceiling on spend, and at scale you want ceilings at several levels.</p>
+  <ul>
+    <li><b>Per agent.</b> A turn cap. In headless runs, <code>--max-turns</code>. For a named subagent, the <code>maxTurns</code> frontmatter field; a workflow can start that subagent by name with <code>agent(..., { agentType })</code>.</li>
+    <li><b>Per headless run.</b> <code>--max-budget-usd</code>. It is a client-side estimate and can overshoot by one step, so set it a little below what you can afford.</li>
+    <li><b>Per workflow.</b> <code>budget.total</code> and <code>budget.remaining()</code>. Check them at wave boundaries, where stopping leaves the repo in a clean state.</li>
+    <li><b>By hand.</b> In <code>/workflows</code>, <code>p</code> pauses and <code>x</code> stops. In the main session, Esc interrupts. A runaway looks like rising turns and cost with no new green modules; stop it, read why, rerun.</li>
+  </ul>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-18">
+    <div class="lab__head">
+      <span class="label">Lab 18 · In Claude Code</span>
+      <span class="lab__meta">~25 min · est. $2–$5</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Break a shared dependency on purpose and watch the breaker stop the 14-module wave after three canaries, then fix it and watch the same workflow finish the wave.</p>
+      <ol class="lab__steps">
+        <li><p>In <code>kestrel-scale/</code>, reset the port to the <code>fresh</code> tag, as in Lab 17.</p>
+          <div class="cmd"><pre><code>cd kestrel-scale
+git add -A &amp;&amp; git commit -qm "before lab 18" --allow-empty
+git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
+        </li>
+        <li><p>Start Claude Code and port waves L0 to L2 (five modules) with the workflow from Lab 16. Run it three times, checking status between runs.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
+        </li>
+        <li><p>In another terminal, confirm that <code>image</code> is green and checkpoint it.</p>
+          <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/image.py; echo "exit $?"
+git add -A &amp;&amp; git commit -qm "lab 18: L0-L2 green"</code></pre></div>
+        </li>
+        <li><p>Now sabotage <code>image.ts</code>. Back in Claude Code:</p>
+          <div class="cmd" data-kind="prompt"><pre><code>For a failure-handling exercise: in ts/src/core/image.ts, rename the method
+that reads a single pixel by appending Broken to its name. Change nothing else,
+do not update callers or tests, and do not try to fix anything afterwards.</code></pre></div>
+          <div class="cmd"><pre><code>scripts/verify.sh kestrel/core/image.py; echo "exit $?"</code></pre></div>
+        </li>
+        <li><p>Create the guarded workflow.</p>
+          <div class="cmd" data-file=".claude/workflows/port-guarded.js"><pre><code>export const meta = {
+  name: 'port-guarded',
+  description: 'Port the ready wave with idempotent agents, capped retries, a canary batch and a circuit breaker',
+  phases: [{ title: 'Find' }, { title: 'Canary' }, { title: 'Wave' }, { title: 'Report' }]
+}
+
+const BREAKER = 0.3
+const CANARIES = 3
+const MAX_FIXES = 2
+const list = { type: 'array', items: { type: 'string' } }
+const resultSchema = {
+  type: 'object',
+  properties: {
+    module: { type: 'string' },
+    status: { type: 'string', enum: ['passed', 'failed', 'skipped', 'blocked'] },
+    error: { type: 'string' }
+  },
+  required: ['module', 'status']
+}
+const RULES = 'Edit only this module\'s files under ts/src and ts/test. Never edit a dependency, ts/src/index.ts or MIGRATION.md. ' +
+  'If a dependency\'s TS port looks broken, stop and return status "blocked" with the error.'
+
+const attempt = (m, note) =&gt; agent(
+  `${note} Module: ${m}. First run python scripts/status.py --json; if ${m} is already ported and passing, return "skipped" and edit nothing.
+Otherwise port it and its tests per MIGRATION.md, every Python test as it("test_name"). ${RULES}
+You are done only when scripts/verify.sh ${m} exits 0. Run it last; return "passed" only if it did, else put the first failing line in error.`,
+  { label: `port ${m}`, model: 'haiku', schema: resultSchema })
+
+const portWithRetry = async (m) =&gt; {
+  let r = await attempt(m, 'Port this module.')
+  for (let i = 1; i &lt;= MAX_FIXES &amp;&amp; r?.status === 'failed'; i++) {
+    r = await attempt(m, `Attempt ${i + 1}. The last attempt failed with: ${r.error ?? 'no error captured'}. Read that failure first.`)
+  }
+  return r ?? { module: m, status: 'failed', error: 'agent returned nothing' }
+}
+const red = (rs) =&gt; rs.filter((r) =&gt; r.status === 'failed' || r.status === 'blocked')
+
+phase('Find')
+const found = await agent('Run python scripts/status.py --next. Return the module ids it prints, like ops/blur. Edit nothing.',
+  { label: 'find wave', model: 'haiku', schema: { type: 'object', properties: { modules: list }, required: ['modules'] } })
+const wave = found?.modules ?? []
+
+phase('Canary')
+let results = (await parallel(wave.slice(0, CANARIES).map((m) =&gt; () =&gt; portWithRetry(m)))).filter(Boolean)
+const tripped = results.length &gt; 0 &amp;&amp; red(results).length / results.length &gt; BREAKER
+const broke = budget.total &gt; 0 &amp;&amp; budget.remaining() &lt; budget.total * 0.2
+
+if (!tripped &amp;&amp; !broke) {
+  phase('Wave')
+  const rest = await parallel(wave.slice(CANARIES).map((m) =&gt; () =&gt; portWithRetry(m)))
+  results = results.concat(rest.filter(Boolean))
+}
+
+phase('Report')
+const truth = await agent(`Run python scripts/gen_barrel.py, then python scripts/status.py --json. Which of these are ported with passing TS tests: ${JSON.stringify(wave)}? Edit nothing else.`,
+  { label: 'reconcile', model: 'haiku', schema: { type: 'object', properties: { passing: list }, required: ['passing'] } })
+const passing = new Set(truth?.passing ?? [])
+for (const r of results) {
+  if ((r.status === 'passed' || r.status === 'skipped') !== passing.has(r.module)) log(`Mismatch on ${r.module}: agent said ${r.status}`)
+}
+if (tripped) log(`Breaker tripped: ${red(results).length}/${results.length} canaries red. First error: ${red(results)[0]?.error ?? 'n/a'}`)
+if (broke) log('Budget guard: under 20% left after the canaries, wave not started.')
+log(`${passing.size}/${wave.length} green, ${wave.length - results.length} never started.`)</code></pre></div>
+        </li>
+        <li><p>Run it and watch <code>/workflows</code>. Count how many port agents start.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-guarded</code></pre></div>
+        </li>
+        <li><p>Check that no porter touched the broken file, then restore it.</p>
+          <div class="cmd"><pre><code>git diff --stat -- ts/src/core/image.ts
+git checkout -- ts/src/core/image.ts
+scripts/verify.sh kestrel/core/image.py; echo "exit $?"</code></pre></div>
+        </li>
+        <li><p>Run the same workflow again. Canaries that went red will be ported again; anything that somehow went green is skipped.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-guarded</code></pre></div>
+          <div class="cmd"><pre><code>python scripts/status.py
+git add -A &amp;&amp; git commit -qm "lab 18: L3 via port-guarded"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>On the sabotaged run, three canaries start and the log reports a tripped breaker naming <code>image.ts</code>, with about eleven modules never started. Canaries that report <code>failed</code> rather than <code>blocked</code> get up to two retries each, so you may count up to nine port agents; that is still far fewer than 14 porters each burning a full budget. <code>git diff</code> on <code>image.ts</code> should show only your sabotage. On the second run the canaries pass, the breaker stays closed, and the full wave runs.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Ask Claude for a loop-until-dry workflow: each round, four <code>haiku</code> agents scan a quarter of <code>kestrel/</code> for Python-versus-JavaScript differences missing from <code>MIGRATION.md</code>; one writer agent merges new ones; stop after two consecutive rounds with nothing new or five rounds total. Compare what it finds with the traps your porters reported.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>At scale, design for failure as the normal case. Retry only with new information and only up to a cap, make every step safe to repeat, and let a canary and a breaker stop correlated failure before it spends the whole wave's budget.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 19 · Tracing, cost, and when 100 is worse than 10. You will measure a real fleet run, then work out where more agents stop paying for themselves.</div>
+</section>

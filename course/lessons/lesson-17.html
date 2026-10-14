@@ -1,0 +1,310 @@
+<section class="lesson" id="lesson-17" data-week="4" data-title="Orchestrators of orchestrators" data-minutes="16">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 17</span>
+    <span class="meta">Week 4 · Scale</span>
+    <span class="meta">~16 min</span>
+    <span class="scale" data-scale="100">100 agents</span>
+  </div>
+  <h1>Orchestrators of orchestrators</h1>
+  <p class="lesson__deck">A lead that reads one report per module is fine at 14 modules and lost at 240. Organisations solved this long ago with managers of managers. Agent systems solve it the same way, with a tree that compresses reports on their way up.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Span of control</h2>
+  <p>Every time a subagent finishes, its final report lands in the context of whoever started it. You saw this in Lesson 6: only the report comes back, and the parent has to read it. With five workers that is a page of reading. With 240 it is a book.</p>
+  <p>Put rough numbers on it. Suppose each porter's report runs to about 400 words (an illustrative figure; yours depend on the prompt). Fourteen reports is about 5,600 words, which a lead reads easily. Two hundred and forty reports is about 96,000 words, delivered one at a time while the lead is also trying to plan. Lesson 3 called this context rot. The more a model holds, the less sharply it attends to any single part. The lead does not crash. It just starts missing things: the three failures in <code>ops/</code> that share a cause, the module that never reported at all.</p>
+  <p>Managers have the same limit. The usual rule of thumb for span of control, the number of direct reports one person can handle well, is somewhere around five to ten. Past that, a manager stops managing and starts skimming. The fix in organisations is a hierarchy, and it works for agents for the same reason.</p>
+
+  <div class="c-note"><p><b>Where the limit actually bites.</b> A workflow script can hold 240 result objects in a JavaScript array without any trouble. Arrays do not suffer from context rot. The problem appears at the model steps that have to <i>read</i> results and judge across them: a planner deciding what to do next, a final summariser, a reviewer looking for patterns. Those are the nodes that need a tree beneath them.</p></div>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Your workflow ports all 240 modules of the full Kestrel library, then ends with one <code>opus</code> agent whose prompt contains all 240 result objects and the instruction "summarise for the team". What goes wrong, and what would you change?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>The prompt is enormous before the agent has done any thinking, and the summary comes out generic: "most modules ported, some trap-related failures". The patterns you most need, such as twelve <code>ops/</code> modules all failing on the same rounding helper, get averaged away. Change the shape. Add one sub-lead per package that reads only its own package's results, re-checks the red ones, and returns five lines. The final agent reads five to ten short summaries and can actually compare them.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part two</span>The shape of a tree</h2>
+  <p>A tree, or hierarchy, is a graph where every node has one parent. In agent terms the root is the lead, the middle layer is <b>sub-leads</b>, and the leaves are workers. Tasks travel down. Summaries travel up. Each node talks only to its parent and its own children, so no node ever has more than a handful of conversations to hold.</p>
+  <p>A good default is one lead, five to ten sub-leads, and around ten workers per sub-lead. That gives 50 to 100 workers, each node within the span-of-control range. For Kestrel the natural split is by package, because packages are where the code already draws boundaries. The starter's five packages map to five sub-leads.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 280" role="img" aria-label="A tree: one lead at the top, five package sub-leads in the middle (core, ops, io, analysis, pipeline), and small worker nodes beneath each sub-lead.">
+      <g class="g-node g-node--orch" data-node="lead"><rect x="300" y="16" width="120" height="44" rx="8"/><text x="360" y="43">Lead</text></g>
+      <text class="g-cap" x="432" y="40">tasks go down, 5-line summaries come up</text>
+      <g class="g-node g-node--orch" data-node="core"><rect x="10" y="110" width="120" height="44" rx="8"/><text x="70" y="137">core lead</text></g>
+      <g class="g-node g-node--orch" data-node="ops"><rect x="155" y="110" width="120" height="44" rx="8"/><text x="215" y="137">ops lead</text></g>
+      <g class="g-node g-node--orch" data-node="io"><rect x="300" y="110" width="120" height="44" rx="8"/><text x="360" y="137">io lead</text></g>
+      <g class="g-node g-node--orch" data-node="analysis"><rect x="445" y="110" width="120" height="44" rx="8"/><text x="505" y="137">analysis lead</text></g>
+      <g class="g-node g-node--orch" data-node="pipeline"><rect x="590" y="110" width="120" height="44" rx="8"/><text x="650" y="137">pipeline lead</text></g>
+      <path class="g-edge" d="M360 60 C 360 85, 70 85, 70 110"/>
+      <path class="g-edge" d="M360 60 C 360 85, 215 85, 215 110"/>
+      <path class="g-edge" d="M360 60 L360 110"/>
+      <path class="g-edge" d="M360 60 C 360 85, 505 85, 505 110"/>
+      <path class="g-edge" d="M360 60 C 360 85, 650 85, 650 110"/>
+      <g class="g-node g-node--worker"><rect x="15" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="54" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="93" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="160" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="199" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="238" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="305" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="344" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="383" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="450" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="489" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="528" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="595" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="634" y="200" width="32" height="28" rx="6"/></g>
+      <g class="g-node g-node--worker"><rect x="673" y="200" width="32" height="28" rx="6"/></g>
+      <path class="g-edge g-edge--faint" d="M70 154 L31 200"/><path class="g-edge g-edge--faint" d="M70 154 L70 200"/><path class="g-edge g-edge--faint" d="M70 154 L109 200"/>
+      <path class="g-edge g-edge--faint" d="M215 154 L176 200"/><path class="g-edge g-edge--faint" d="M215 154 L215 200"/><path class="g-edge g-edge--faint" d="M215 154 L254 200"/>
+      <path class="g-edge g-edge--faint" d="M360 154 L321 200"/><path class="g-edge g-edge--faint" d="M360 154 L360 200"/><path class="g-edge g-edge--faint" d="M360 154 L399 200"/>
+      <path class="g-edge g-edge--faint" d="M505 154 L466 200"/><path class="g-edge g-edge--faint" d="M505 154 L505 200"/><path class="g-edge g-edge--faint" d="M505 154 L544 200"/>
+      <path class="g-edge g-edge--faint" d="M650 154 L611 200"/><path class="g-edge g-edge--faint" d="M650 154 L650 200"/><path class="g-edge g-edge--faint" d="M650 154 L689 200"/>
+      <text class="g-cap" x="70" y="252" text-anchor="middle">5 modules</text>
+      <text class="g-cap" x="215" y="252" text-anchor="middle">12 modules</text>
+      <text class="g-cap" x="360" y="252" text-anchor="middle">2 modules</text>
+      <text class="g-cap" x="505" y="252" text-anchor="middle">2 modules</text>
+      <text class="g-cap" x="650" y="252" text-anchor="middle">3 modules</text>
+    </svg>
+    <figcaption>The starter as a tree. The counts under each sub-lead are the starter's (the pipeline lead also owns <code>cli.py</code>). In the 240-module library the same five sub-leads would each own far more, and <code>ops/</code> would need its own layer of group leads.</figcaption>
+  </figure>
+
+  <p>The tree is lopsided, and that is normal. <code>ops/</code> is wide; <code>io/</code> is narrow. In the full library, <code>ops/</code> holds most of the 240 modules. One ops lead with a hundred-plus workers would just recreate the original problem one level down. So <code>ops/</code> gets a third layer: an ops lead with about ten group leads (filters, geometry ops, colour ops, and so on), each with about ten porters. Split wherever a node would otherwise have more children than it can read.</p>
+  <p>There are depth limits to design around. Subagents can spawn subagents up to three layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>). A workflow can call another workflow with <code>workflow()</code>, one level of nesting. A tree for Kestrel-240 fits: the workflow script acts as the root, a sub-lead agent is layer one, a group lead is layer two, and porters are layer three.</p>
+
+  <div class="c-table-wrap wide">
+    <table class="c-table">
+      <thead><tr><th>Level</th><th>Reads</th><th>Sends up</th><th>Model</th></tr></thead>
+      <tbody>
+        <tr><td>Lead (or the script)</td><td>5–10 sub-lead summaries</td><td>A status a human can act on</td><td><code>opus</code> where judgment across packages matters</td></tr>
+        <tr><td>Sub-lead</td><td>Its package's results; re-runs <code>scripts/verify.sh</code> on red modules</td><td>Five lines: green count, red modules with causes, new traps</td><td><code>sonnet</code></td></tr>
+        <tr><td>Worker (porter)</td><td>One module, its tests, <code>MIGRATION.md</code></td><td>A schema result: module, status, traps</td><td><code>haiku</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tbl-cap wide">Each level reads a bounded amount and sends up less than it read. That ratio is the tree's whole job.</p>
+
+  <h2><span class="h2num">Part three</span>What a summary must keep</h2>
+  <p>Compression throws information away. The design question is which information survives. A sub-lead summary for Kestrel should keep four things and drop the rest.</p>
+  <ol>
+    <li><b>Counts from the repo.</b> How many modules are green, measured by running <code>scripts/verify.sh</code>. The sub-lead counts exit codes. It does not count its workers' claims.</li>
+    <li><b>Every red module, with a one-line cause.</b> "<code>ops/pad</code>: wrap mode returns -1 for x = -1" is useful. "Some issues in pad" is not.</li>
+    <li><b>New traps.</b> Anything that should go into <code>MIGRATION.md</code>, so other packages stop rediscovering it.</li>
+    <li><b>Cross-package blockers.</b> "<code>analysis/stats</code> is waiting on <code>ops/histogram</code>" belongs to the lead, because only the lead can see both packages.</li>
+  </ol>
+  <p>Everything else stays on disk. Diffs live in the repo, details live in <code>scripts/status.py</code>, and anyone (you or an agent) can drill down when a summary raises a question. This is the blackboard pattern from Lessons 12 and 13 doing its job: the tree moves decisions, and the files hold the facts.</p>
+
+  <div class="quote quote--agent"><div class="quote__from">Sub-lead report · ops</div><p>10/12 green by verify.sh. Red: ops/blur (rounding at .5 edges, uses Math.round), ops/pad (wrap mode negative modulo). New traps: T1 also hits blur's kernel normalisation; JS % differs for negatives (pad). Blocker for others: none. Suggest adding a roundHalfEven note to MIGRATION.md before analysis starts.</p></div>
+
+  <p>Two failure modes are worth naming. The first is the cheerful summary: a sub-lead reports "all good" because its workers said so. Requiring counts from <code>verify.sh</code> exit codes closes that gap. The second is a game of telephone, where a cause gets reworded at every level until it means nothing. Keep causes as short, concrete phrases with module names in them, and pass them up word for word.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>The <code>ops</code> sub-lead has 12 porter results in hand. Which report should it send up to the lead?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">All 12 porter reports pasted together, so the lead has full detail</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">"12/12 ported, all good", since every porter said it was done</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Green count from re-running <code>verify.sh</code>, each red module with a one-line cause, and new traps</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">The full diff of every changed file, so the lead can review the code itself</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>That is no compression at all. Multiply by five sub-leads and the lead is back to reading every worker report, which is the problem the tree was built to remove.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Short, but untrustworthy. Porters on <code>haiku</code> regularly believe they are done when <code>blur</code> still fails T1. A summary built on claims passes the error straight up.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>Small, checked against the repo, and it keeps exactly what the lead needs to act: what is red, why, and what other packages should learn from it.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>Code review belongs at the node that owns the module. Sending diffs upward puts the most detailed information in front of the agent with the least room to read it.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Building the tree in a workflow</h2>
+  <p>There are two ways to build a tree with the tools you have. The first is <b>model-driven sub-leads</b>. The script calls <code>agent()</code> once per package, and that sub-lead agent uses the Agent tool to start its own porters. The outside is scripted (which packages, in what order) and the inside is model-driven (how to split the package). The second is a <b>nested workflow</b>. A top-level script calls <code>workflow('port-package', ...)</code> for each package, and the inner workflow is fully scripted. That gives you more determinism, at the cost of using your one level of workflow nesting.</p>
+  <p>The tree and the dependency graph are two different graphs, and you need both. The tree says who reports to whom. The DAG from Lesson 11 says what can run when. <code>ops</code> cannot start until <code>core</code> is green, no matter how the reporting lines are drawn. So the script runs sub-leads in dependency order: <code>core</code>, then <code>ops</code> and <code>io</code> side by side, then <code>analysis</code> and <code>pipeline</code>.</p>
+
+  <div class="c-code wide" data-component="code">
+  <div class="c-code__head"><span>.claude/workflows/port-tree.js</span><span class="tag">Click a marked line</span></div>
+  <div class="c-code__grid">
+    <ol class="c-code__lines">
+      <li><div class="cl"><span class="ln">1</span><pre><span class="tk-kw">export</span> <span class="tk-kw">const</span> meta = {</pre></div></li>
+      <li><div class="cl"><span class="ln">2</span><pre>  <span class="tk-key">name</span>: <span class="tk-str">'port-tree'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">3</span><pre>  <span class="tk-key">description</span>: <span class="tk-str">'Port the starter with one sub-lead per package; the top level reads only short summaries'</span>,</pre></div></li>
+      <li><button class="cl" data-note="n1"><span class="ln">4</span><pre>  <span class="tk-key">phases</span>: [{ <span class="tk-key">title</span>: <span class="tk-str">'core'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'ops and io'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'analysis and pipeline'</span> }, { <span class="tk-key">title</span>: <span class="tk-str">'Roll-up'</span> }]</pre></button></li>
+      <li><div class="cl"><span class="ln">5</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">6</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">7</span><pre><span class="tk-kw">const</span> summarySchema = {</pre></div></li>
+      <li><div class="cl"><span class="ln">8</span><pre>  <span class="tk-key">type</span>: <span class="tk-str">'object'</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">9</span><pre>  <span class="tk-key">properties</span>: {</pre></div></li>
+      <li><div class="cl"><span class="ln">10</span><pre>    <span class="tk-key">package</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> },</pre></div></li>
+      <li><div class="cl"><span class="ln">11</span><pre>    <span class="tk-key">green</span>: { <span class="tk-key">type</span>: <span class="tk-str">'integer'</span> },</pre></div></li>
+      <li><div class="cl"><span class="ln">12</span><pre>    <span class="tk-key">red</span>: { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } },</pre></div></li>
+      <li><div class="cl"><span class="ln">13</span><pre>    <span class="tk-key">traps</span>: { <span class="tk-key">type</span>: <span class="tk-str">'array'</span>, <span class="tk-key">items</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span> } },</pre></div></li>
+      <li><button class="cl" data-note="n2"><span class="ln">14</span><pre>    <span class="tk-key">summary</span>: { <span class="tk-key">type</span>: <span class="tk-str">'string'</span>, <span class="tk-key">description</span>: <span class="tk-str">'At most 5 lines'</span> }</pre></button></li>
+      <li><div class="cl"><span class="ln">15</span><pre>  },</pre></div></li>
+      <li><div class="cl"><span class="ln">16</span><pre>  <span class="tk-key">required</span>: [<span class="tk-str">'package'</span>, <span class="tk-str">'green'</span>, <span class="tk-str">'red'</span>, <span class="tk-str">'traps'</span>, <span class="tk-str">'summary'</span>]</pre></div></li>
+      <li><div class="cl"><span class="ln">17</span><pre>}</pre></div></li>
+      <li><div class="cl"><span class="ln">18</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">19</span><pre><span class="tk-kw">const</span> subLead = (pkg, scope) =&gt; () =&gt; agent(</pre></div></li>
+      <li><div class="cl"><span class="ln">20</span><pre>  <span class="tk-str">`You are the sub-lead for the ${pkg} package (${scope}).</span></pre></div></li>
+      <li><div class="cl"><span class="ln">21</span><pre><span class="tk-str">Run python scripts/status.py --json and list the modules in ${scope} that are not passing yet.</span></pre></div></li>
+      <li><button class="cl" data-note="n3"><span class="ln">22</span><pre><span class="tk-str">For each one, use a subagent with model haiku to port it per MIGRATION.md. Respect python scripts/deps.py --layers</span></pre></button></li>
+      <li><div class="cl"><span class="ln">23</span><pre><span class="tk-str">inside your package: modules in the same layer can run in parallel, later layers wait.</span></pre></div></li>
+      <li><div class="cl"><span class="ln">24</span><pre><span class="tk-str">Tell every subagent: port every Python test as it("test_name"), edit only that module's files under ts/src and ts/test, never ts/src/index.ts or MIGRATION.md,</span></pre></div></li>
+      <li><div class="cl"><span class="ln">25</span><pre><span class="tk-str">and you are done only when scripts/verify.sh &lt;module&gt; exits 0.</span></pre></div></li>
+      <li><button class="cl" data-note="n4"><span class="ln">26</span><pre><span class="tk-str">When they finish, run scripts/verify.sh yourself for every module in ${scope}. Count green from those exit codes,</span></pre></button></li>
+      <li><div class="cl"><span class="ln">27</span><pre><span class="tk-str">not from subagent reports. Return at most 5 lines in summary: green count, red modules with a one-line cause, new traps.`</span>,</pre></div></li>
+      <li><div class="cl"><span class="ln">28</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">`sub-lead ${pkg}`</span>, <span class="tk-key">model</span>: <span class="tk-str">'sonnet'</span>, <span class="tk-key">schema</span>: summarySchema })</pre></div></li>
+      <li><div class="cl"><span class="ln">29</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">30</span><pre><span class="tk-kw">const</span> rollup = []</pre></div></li>
+      <li><div class="cl"><span class="ln">31</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">32</span><pre>phase(<span class="tk-str">'core'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">33</span><pre>rollup.push(...(<span class="tk-kw">await</span> parallel([subLead(<span class="tk-str">'core'</span>, <span class="tk-str">'kestrel/core/'</span>)])).filter(Boolean))</pre></div></li>
+      <li><div class="cl"><span class="ln">34</span><pre> </pre></div></li>
+      <li><button class="cl" data-note="n5"><span class="ln">35</span><pre>phase(<span class="tk-str">'ops and io'</span>)</pre></button></li>
+      <li><div class="cl"><span class="ln">36</span><pre>rollup.push(...(<span class="tk-kw">await</span> parallel([subLead(<span class="tk-str">'ops'</span>, <span class="tk-str">'kestrel/ops/'</span>), subLead(<span class="tk-str">'io'</span>, <span class="tk-str">'kestrel/io/'</span>)])).filter(Boolean))</pre></div></li>
+      <li><div class="cl"><span class="ln">37</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">38</span><pre>phase(<span class="tk-str">'analysis and pipeline'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">39</span><pre>rollup.push(...(<span class="tk-kw">await</span> parallel([</pre></div></li>
+      <li><div class="cl"><span class="ln">40</span><pre>  subLead(<span class="tk-str">'analysis'</span>, <span class="tk-str">'kestrel/analysis/'</span>),</pre></div></li>
+      <li><div class="cl"><span class="ln">41</span><pre>  subLead(<span class="tk-str">'pipeline'</span>, <span class="tk-str">'kestrel/pipeline/ and kestrel/cli.py'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">42</span><pre>])).filter(Boolean))</pre></div></li>
+      <li><div class="cl"><span class="ln">43</span><pre> </pre></div></li>
+      <li><div class="cl"><span class="ln">44</span><pre>phase(<span class="tk-str">'Roll-up'</span>)</pre></div></li>
+      <li><div class="cl"><span class="ln">45</span><pre><span class="tk-kw">await</span> agent(<span class="tk-str">'Run python scripts/gen_barrel.py to regenerate ts/src/index.ts. Edit nothing else.'</span>, { <span class="tk-key">label</span>: <span class="tk-str">'regenerate barrel'</span>, <span class="tk-key">model</span>: <span class="tk-str">'haiku'</span> })</pre></div></li>
+      <li><div class="cl"><span class="ln">46</span><pre><span class="tk-kw">for</span> (<span class="tk-kw">const</span> s <span class="tk-kw">of</span> rollup) log(<span class="tk-str">`${s.package}: ${s.green} green, red: ${s.red.join(', ') || 'none'}`</span>)</pre></div></li>
+      <li><button class="cl" data-note="n6"><span class="ln">47</span><pre><span class="tk-kw">const</span> report = <span class="tk-kw">await</span> agent(</pre></button></li>
+      <li><div class="cl"><span class="ln">48</span><pre>  <span class="tk-str">`You are the lead. These sub-lead summaries are all you get: ${JSON.stringify(rollup.map((s) =&gt; s.summary))}</span></pre></div></li>
+      <li><div class="cl"><span class="ln">49</span><pre><span class="tk-str">Write a 10-line status for a human: overall green count, what is blocked, which traps repeat across packages,</span></pre></div></li>
+      <li><button class="cl" data-note="n7"><span class="ln">50</span><pre><span class="tk-str">and the one thing to fix first. Do not open module files.`</span>,</pre></button></li>
+      <li><div class="cl"><span class="ln">51</span><pre>  { <span class="tk-key">label</span>: <span class="tk-str">'lead roll-up'</span>, <span class="tk-key">model</span>: <span class="tk-str">'opus'</span> })</pre></div></li>
+      <li><div class="cl"><span class="ln">52</span><pre>log(report ?? <span class="tk-str">'lead roll-up failed'</span>)</pre></div></li>
+    </ol>
+    <div class="c-code__notes">
+      <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line to see why it is there.</p></div>
+      <div class="cnote" data-note="n1"><div class="label">Line 4 · phases follow the DAG</div><p>Packages still have dependencies. <code>core</code> must finish before <code>ops</code> and <code>io</code>, which must finish before <code>analysis</code> and <code>pipeline</code>. The tree says who reports to whom; the phases say what can run when.</p></div>
+      <div class="cnote" data-note="n2"><div class="label">Line 14 · the compression contract</div><p>The schema caps what travels upward. Counts and red modules are structured fields; the prose is limited to five lines.</p></div>
+      <div class="cnote" data-note="n3"><div class="label">Line 22 · model-driven inside</div><p>The sub-lead is one workflow agent that spawns its own porters with the Agent tool. Scripted on the outside, model-driven on the inside. That uses two of the default three subagent layers.</p></div>
+      <div class="cnote" data-note="n4"><div class="label">Line 26 · re-verify before reporting</div><p>A sub-lead that repeats its workers' claims is a game of telephone. Counting green from exit codes keeps the summary tied to the repo.</p></div>
+      <div class="cnote" data-note="n5"><div class="label">Line 35 · parallel siblings</div><p>Two sub-leads run at once. Their packages share no files, so they cannot collide.</p></div>
+      <div class="cnote" data-note="n6"><div class="label">Line 47 · the lead reads summaries only</div><p>The top lead gets five short summaries, not 24 worker reports. At 240 modules that difference is the whole point of the tree.</p></div>
+      <div class="cnote" data-note="n7"><div class="label">Line 50 · keep the lead's context clean</div><p>If the lead needs detail, a human or a follow-up agent can drill into <code>scripts/status.py</code>. The lead's job is judgment across packages.</p></div>
+    </div>
+  </div>
+</div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="flat">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>Should you add sub-leads to the Lesson 16 workflow that ports the starter's L3 wave?</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>The wave has 14 modules, all in <code>ops/</code> and <code>io/</code>.</li><li>The script already collects results in an array and logs green and red.</li><li>No model step reads all 14 results; you read the log yourself.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="tree">Add sub-leads</button>
+        <button class="vbtn" data-pick="flat">Keep it flat</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="tree"><span class="verdict-tag" data-v="fail">Not quite</span><p>Each sub-lead is another agent's worth of tokens, and another place where a cause can be reworded. With nobody drowning, the extra layer adds cost and loss without removing a problem.</p></div>
+        <div class="vfb" data-for="flat"><span class="verdict-tag" data-v="pass">Right call</span><p>Fourteen results held by a script, read by you, is well within anyone's span of control. Add a layer when a model node would have to read more than about ten reports. Kestrel-240 crosses that line; the 14-module wave does not.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-17">
+    <div class="lab__head">
+      <span class="label">Lab 17 · In Claude Code</span>
+      <span class="lab__meta">~25 min · est. $4–$10</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port the whole starter through a tree of package sub-leads, where the top lead reads only short summaries, then drill down from a summary to the facts.</p>
+      <ol class="lab__steps">
+        <li><p>In <code>kestrel-scale/</code>, reset the port to the <code>fresh</code> tag. This removes the ported TypeScript and keeps your workflows and <code>MIGRATION.md</code>, including any traps you recorded. Keeping the traps is realistic: a real migration gets smarter as it goes.</p>
+          <div class="cmd"><pre><code>cd kestrel-scale
+git add -A &amp;&amp; git commit -qm "before lab 17" --allow-empty
+git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts
+python scripts/status.py</code></pre></div>
+        </li>
+        <li><p>Create the workflow file.</p>
+          <div class="cmd" data-file=".claude/workflows/port-tree.js"><pre><code>export const meta = {
+  name: 'port-tree',
+  description: 'Port the starter with one sub-lead per package; the top level reads only short summaries',
+  phases: [{ title: 'core' }, { title: 'ops and io' }, { title: 'analysis and pipeline' }, { title: 'Roll-up' }]
+}
+
+const summarySchema = {
+  type: 'object',
+  properties: {
+    package: { type: 'string' },
+    green: { type: 'integer' },
+    red: { type: 'array', items: { type: 'string' } },
+    traps: { type: 'array', items: { type: 'string' } },
+    summary: { type: 'string', description: 'At most 5 lines' }
+  },
+  required: ['package', 'green', 'red', 'traps', 'summary']
+}
+
+const subLead = (pkg, scope) =&gt; () =&gt; agent(
+  `You are the sub-lead for the ${pkg} package (${scope}).
+Run python scripts/status.py --json and list the modules in ${scope} that are not passing yet.
+For each one, use a subagent with model haiku to port it per MIGRATION.md. Respect python scripts/deps.py --layers
+inside your package: modules in the same layer can run in parallel, later layers wait.
+Tell every subagent: port every Python test as it("test_name"), edit only that module's files under ts/src and ts/test, never ts/src/index.ts or MIGRATION.md,
+and you are done only when scripts/verify.sh &lt;module&gt; exits 0.
+When they finish, run scripts/verify.sh yourself for every module in ${scope}. Count green from those exit codes,
+not from subagent reports. Return at most 5 lines in summary: green count, red modules with a one-line cause, new traps.`,
+  { label: `sub-lead ${pkg}`, model: 'sonnet', schema: summarySchema })
+
+const rollup = []
+
+phase('core')
+rollup.push(...(await parallel([subLead('core', 'kestrel/core/')])).filter(Boolean))
+
+phase('ops and io')
+rollup.push(...(await parallel([subLead('ops', 'kestrel/ops/'), subLead('io', 'kestrel/io/')])).filter(Boolean))
+
+phase('analysis and pipeline')
+rollup.push(...(await parallel([
+  subLead('analysis', 'kestrel/analysis/'),
+  subLead('pipeline', 'kestrel/pipeline/ and kestrel/cli.py')
+])).filter(Boolean))
+
+phase('Roll-up')
+await agent('Run python scripts/gen_barrel.py to regenerate ts/src/index.ts. Edit nothing else.', { label: 'regenerate barrel', model: 'haiku' })
+for (const s of rollup) log(`${s.package}: ${s.green} green, red: ${s.red.join(', ') || 'none'}`)
+const report = await agent(
+  `You are the lead. These sub-lead summaries are all you get: ${JSON.stringify(rollup.map((s) =&gt; s.summary))}
+Write a 10-line status for a human: overall green count, what is blocked, which traps repeat across packages,
+and the one thing to fix first. Do not open module files.`,
+  { label: 'lead roll-up', model: 'opus' })
+log(report ?? 'lead roll-up failed')</code></pre></div>
+        </li>
+        <li><p>Start Claude Code. Sub-leads run on <code>sonnet</code> and their porters on <code>haiku</code>, as the script asks; the environment variable covers any subagent that is not given a model.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
+        </li>
+        <li><p>Run the tree and open <code>/workflows</code>. You should see one agent per sub-lead in the script's view; their porters run inside them.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/port-tree</code></pre></div>
+        </li>
+        <li><p>When it finishes, read the run log. You should find five one-line package tallies and a ten-line status from the lead. That is all the top of the tree saw.</p></li>
+        <li><p>Now drill down. Pick one red module from a summary and ask for the facts. Notice that the answer comes from the repo, not from the summaries.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>The ops sub-lead reported a red module. Run python scripts/status.py --json
+and scripts/verify.sh on it, and show me the first failing assertion and the
+line in the TypeScript port that causes it. Do not fix it.</code></pre></div>
+        </li>
+        <li><p>Record the cost and commit.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+          <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 17: tree port"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Three dependency phases followed by a roll-up. The <code>ops</code> sub-lead takes longest, because it has 12 modules and the traps cluster there. The lead's status names the red modules and the shared causes without opening any module. If a sub-lead reports that it could not start subagents, it will usually port its package itself, which still works but loses the parallelism; note it and keep going. Expect most of the 24 modules green, with stragglers in <code>ops/</code> or <code>pipeline/</code>.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Rebuild the tree with nesting instead. Write <code>port-package.js</code> as a fully scripted workflow (find modules, pipeline port and verify, summarise in five lines), then have a top-level workflow call <code>workflow('port-package', ...)</code> per package in dependency order. Compare determinism and cost with the model-driven version.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Give every model node a bounded amount to read. A tree of sub-leads, each re-checking against the repo and sending up a few verified lines, lets the top of a 240-module migration think clearly about five things instead of skimming 240.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 18 · Loops at scale. With a hundred agents something is always failing: retries, idempotency, circuit breakers and budgets keep a fleet from burning money on a broken dependency.</div>
+</section>

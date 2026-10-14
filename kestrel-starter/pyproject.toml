@@ -1,0 +1,14 @@
+[project]
+name = "kestrel"
+version = "0.1.0"
+description = "Kestrel: a fictional, pure-Python image-processing library (course starter slice)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"

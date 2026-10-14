@@ -1,0 +1,160 @@
+<section class="lesson" id="lesson-06" data-week="2" data-title="Why split, and what it costs" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 06</span>
+    <span class="meta">Week 2 · Small teams</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="3-5">3–5 agents</span>
+  </div>
+  <h1>Why split, and what it costs</h1>
+  <p class="lesson__deck">A second agent is a design decision with a price tag. This lesson names the four things a split buys and the three things it costs, then you run your first three-agent port and hold it up against your Week 1 baseline.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>The first time the work invites a team</h2>
+  <p>In Week 1 you ported <code>core/errors</code>, <code>core/mathutil</code>, <code>core/color</code>, <code>core/geometry</code>, <code>core/image</code> and <code>ops/blur</code> with one agent. That agent had a bounded loop, a context file in <code>MIGRATION.md</code>, a Stop hook that refuses "done" while a ported module fails its tests, and a cost cap. Your <code>notes/baseline.md</code> holds the turns, cost and wall-clock time for each module.</p>
+  <p>One agent was the right call for that stretch because the modules came in a strict order. <code>color</code> needs <code>mathutil</code>. <code>image</code> needs <code>color</code> and <code>geometry</code>. Nothing could run side by side, so a second agent would only have waited.</p>
+  <p>Run <code>python scripts/status.py --next</code> today and the picture changes. With <code>image</code> ported, every module in wave L3 is ready: the twelve ops plus <code>io/ppm</code> and <code>io/pgm</code>. You have done one of them (<code>blur</code>). Thirteen modules are now waiting, and none of them depends on another. This is the first point in the port where the shape of the work allows more than one agent to make progress at the same time.</p>
+  <p>Some vocabulary before we go on. The <b>lead</b> is your main Claude Code session, the one you type into. A <b>subagent</b> is a separate Claude instance the lead starts with its Agent tool. The subagent gets a <b>fresh context</b>: its own system prompt, the delegation message the lead wrote for it, and your <code>CLAUDE.md</code>. It does not see the lead's conversation. When it finishes, only its <b>final report</b> comes back to the lead. Everything else it read and did stays behind.</p>
+  <p>That last sentence drives most of this week. Keep it in mind.</p>
+
+  <h2><span class="h2num">Part two</span>Four reasons to split</h2>
+  <p>There are four good reasons to hand work to another agent. Any one of them can justify a split. A split that has none of them is just a more expensive way to do the same thing.</p>
+  <p><b>1. Context isolation.</b> A porter for <code>ops/crop.py</code> needs to read <code>crop.py</code>, <code>tests/ops/test_crop.py</code>, <code>ts/src/core/image.ts</code> and <code>MIGRATION.md</code>. It never needs the forty tool results produced while porting <code>flip</code>. In Lesson 03 you saw that the context window is the agent's working memory and that it degrades as it fills. Splitting gives each piece of work a clean desk. The lead's desk stays clean too: it receives three short reports instead of three piles of test output.</p>
+  <p><b>2. Parallelism.</b> <code>invert</code>, <code>flip</code> and <code>crop</code> are independent leaves of the dependency graph. Run them at once and the wall-clock time is roughly the slowest of the three, plus the lead's overhead, instead of their sum. By default Claude Code runs up to 20 subagents concurrently (<code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>), so three is nowhere near a limit.</p>
+  <p><b>3. Specialization.</b> Each subagent can have its own instructions, its own tool list and its own model. A porter needs to edit files. A reviewer should not. A planner can run on a stronger model than the workers it plans for. You will build these roles in Lessons 07 and 08.</p>
+  <p><b>4. Independent judgement.</b> The agent that wrote the code is the worst judge of it. It remembers why it made each choice, so it reads its own intent into the code. A reviewer with a fresh context sees only the code and the tests. That is the reviewer who notices <code>Math.round</code> where Python used banker's rounding (trap T1). Lesson 10 builds that loop.</p>
+
+  <div class="c-table-wrap wide"><table class="c-table">
+    <thead><tr><th>Reason</th><th>What it fixes</th><th>Kestrel signal</th><th>Applies to invert, flip, crop?</th></tr></thead>
+    <tbody>
+      <tr><td>Context isolation</td><td>A context that fills with unrelated files and output</td><td>The lead has already read six modules' worth of files this week</td><td>Yes, mildly</td></tr>
+      <tr><td>Parallelism</td><td>Wall-clock time on independent work</td><td><code>status.py --next</code> lists 13 ready modules</td><td>Yes, this is the main reason</td></tr>
+      <tr><td>Specialization</td><td>One prompt and toolset trying to do several jobs</td><td>Porting and reviewing want different tools</td><td>No, all three do the same job</td></tr>
+      <tr><td>Independent judgement</td><td>An author grading its own work</td><td>T1 slipped past a "done" claim in Lesson 04</td><td>No reviewer yet</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tbl-cap wide">Today's split is justified by parallelism, with a little context isolation on the side. Two of the four reasons do not apply yet.</p>
+
+  <h2><span class="h2num">Part three</span>Three things a split costs</h2>
+  <p><b>Tokens.</b> Anthropic's write-up of its multi-agent research system gives two numbers worth carrying around. A single agent uses about 4 times the tokens of a chat. A multi-agent system uses about 15 times. The same post reports that a lead agent with parallel subagents beat a single agent by 90.2% on their internal research eval, and that token usage alone explained about 80% of the performance variance on their browsing eval. Read those together. Teams often do better partly because they spend more, and you pay for every token. On Kestrel the duplication is easy to see: each porter rereads <code>MIGRATION.md</code>, <code>CLAUDE.md</code> and <code>image.ts</code> on its own. Shared context is paid for once per agent.</p>
+  <p><b>Coordination overhead.</b> Somebody writes three briefs, waits for the slowest worker, reads three reports and settles anything that collides. Collisions are real in this repo. Every ported module adds one <code>export * from</code> line to <code>ts/src/index.ts</code>, so three porters working in one folder all edit the same file. The lead pays for that coordination in its own turns and tokens.</p>
+  <p><b>Lossy handoffs.</b> Only the final report returns. Suppose the <code>crop</code> worker discovers that a negative box offset goes through <code>floor_div</code> and therefore hits trap T2. If its report does not mention that, the lead never learns it, and neither does the next agent that ports a module using <code>floor_div</code>. Discoveries die with the worker's context unless the report format asks for them. That is why the lab's prompt asks each worker to name any trap it hit.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 300" role="img" aria-label="Hub and spoke: the lead session writes three briefs to three porters, each porter starts with a fresh context, and only their final reports flow back to the lead">
+      <text class="g-cap" x="360" y="12" text-anchor="middle">each starts fresh</text>
+      <text class="g-cap" x="80" y="98" text-anchor="middle">writes 3 briefs</text>
+      <g class="g-node g-node--orch" data-node="lead"><rect x="20" y="110" width="120" height="50" rx="8"/><text x="80" y="140">Lead session</text></g>
+      <g class="g-node g-node--worker" data-node="w1"><rect x="300" y="20" width="120" height="50" rx="8"/><text x="360" y="50">Porter: invert</text></g>
+      <g class="g-node g-node--worker" data-node="w2"><rect x="300" y="110" width="120" height="50" rx="8"/><text x="360" y="140">Porter: flip</text></g>
+      <g class="g-node g-node--worker" data-node="w3"><rect x="300" y="200" width="120" height="50" rx="8"/><text x="360" y="230">Porter: crop</text></g>
+      <g class="g-node g-node--data" data-node="rep"><rect x="560" y="110" width="120" height="50" rx="8"/><text x="620" y="140">3 reports</text></g>
+      <path class="g-edge" d="M140 135 C 220 135, 220 45, 300 45"/>
+      <path class="g-edge" d="M140 135 L300 135"/>
+      <path class="g-edge" d="M140 135 C 220 135, 220 225, 300 225"/>
+      <path class="g-edge" d="M420 45 C 490 45, 490 135, 560 135"/>
+      <path class="g-edge" d="M420 135 L560 135"/>
+      <path class="g-edge" d="M420 225 C 490 225, 490 135, 560 135"/>
+      <path class="g-edge g-edge--loop" d="M620 160 L620 282 L80 282 L80 160"/>
+      <text class="g-cap" x="360" y="274" text-anchor="middle">only the final reports return</text>
+    </svg>
+    <figcaption>The shape you build in the lab. Everything a porter reads stays inside its box; the dashed edge is the only path back to the lead.</figcaption>
+  </figure>
+
+  <p>There is one more cost, and it is the one that matters most for a migration. The same Anthropic post says multi-agent systems fit poorly when agents need shared context or have many dependencies between them, and that this includes most coding tasks. Kestrel is a coding task. You can parallelize it only where the dependency graph says the pieces are independent. Today you picked three leaves of that graph, which is the easy case. Lesson 11 turns this into a method: find the graph first, then decide how many agents it can feed.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Look at your baseline for <code>ops/blur</code>. Now picture the lab run: three subagents port <code>invert</code>, <code>flip</code> and <code>crop</code> at the same time. Compared with three single-agent ports one after another, what happens to total wall-clock time, and what happens to cost per module?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>Wall-clock time should drop to roughly the slowest single port plus a few minutes of lead overhead for briefing and reading reports. Cost per module usually stays flat or rises. Each worker rebuilds the same context from scratch, and the lead spends tokens coordinating. These three ops are small, so the overhead is a large share of the total. If your baseline ports were already quick, the parallel run can save less time than you expect. Write your guess down and check it against <code>/usage</code> at the end of the lab.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Where the curve bends</h2>
+  <p>If three agents help, why not thirteen, one per ready module? Two forces push back. First, the work has an order. Kestrel's 24 modules sit in 7 waves, and no number of agents lets you port <code>runner</code> before <code>steps</code>. The longest chain, <code>mathutil → color → image → (any op) → steps → runner → cli</code>, sets a floor on wall-clock time. Second, every extra agent adds briefing, context loading and merge work. Past some point an extra agent adds more coordination than it removes waiting. This is Amdahl's law applied to agents: the part of the job that cannot run in parallel caps the speedup, and the overhead of each extra worker eats into what remains.</p>
+  <p>The simulator below uses the starter's numbers: 24 modules in 7 waves. Try 1, 3, 5 and then 20 agents. Look for the point where adding agents stops buying time while cost keeps rising.</p>
+
+  <div class="ex wide c-sim" data-component="scale-sim" data-modules="24" data-waves="7" data-start="3"></div>
+
+  <p>At this size, the useful range is small. The widest wave has 14 modules, and most waves have one to three. A team of three to five agents covers the wide wave well and sits idle the rest of the time. You will meet the same curve again in Lesson 19 at 240 modules, where the numbers are bigger and the bend is just as real.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>A teammate proposes porting <code>kestrel/core/image.py</code> with three parallel subagents: one for the <code>Image</code> class, one for its pixel accessors, one for the tests. What is the strongest objection?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Three agents would use about 15 times the tokens of one</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">The three pieces share one file and depend on each other's choices, so the work is tightly coupled</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Subagents are not allowed to edit the same file</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Three concurrent subagents exceeds the default limit</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not the strongest</div><p>Cost is a real objection, but the 15x figure describes multi-agent systems in Anthropic's research setting. It is an observation about one system, and your ratio will differ. If the split worked, extra cost might be acceptable. The deeper problem is that it would not work well.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>The accessors depend on how the class stores pixels, and the tests depend on both. Each agent would need the others' decisions, which a fresh context does not have. This is the "shared context, many dependencies" case Anthropic flags as a poor fit for multi-agent work. One agent should port <code>image.py</code>.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Nothing forbids it. Several subagents in one folder can edit the same file, which is exactly why collisions happen. Lesson 14 deals with that.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>The default is up to 20 concurrent subagents, set by <code>CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS</code>. Three is well inside it.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ex wide c-verdict" data-component="verdict" data-answer="one">
+    <div class="ex__head"><span class="dot"></span><span class="label">Make the call</span></div>
+    <div class="ex__body">
+      <p>You have ten minutes before a meeting and want one more module done.</p>
+      <div class="spec-card"><div class="label">The situation</div><ol><li>The task is <code>ops/contrast.py</code> and its tests, nothing else.</li><li>Its dependencies are ported and passing.</li><li>Your Week 1 recipe already ports one op reliably.</li></ol></div>
+      <div class="verdict-row">
+        <button class="vbtn" data-pick="one">One agent</button>
+        <button class="vbtn" data-pick="team">Lead plus subagents</button>
+      </div>
+      <div class="stack">
+        <div class="vfb is-shown" data-for="idle"><p>Decide, then see the reasoning.</p></div>
+        <div class="vfb" data-for="one"><span class="verdict-tag" data-v="pass">Right call</span><p>One module gives no parallelism. The context fits easily. There is no second job that needs a different role. All four reasons to split are absent, so a team only adds a brief, a handoff and extra tokens.</p></div>
+        <div class="vfb" data-for="team"><span class="verdict-tag" data-v="fail">Not quite</span><p>Run down the four reasons. Nothing runs in parallel, the context is small, and there is only one job. A lead plus one subagent is the single-agent recipe with an extra handoff on top.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-06">
+    <div class="lab__head">
+      <span class="label">Lab 06 · In Claude Code</span>
+      <span class="lab__meta">~15 min · est. $0.50–$1.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port three independent ops with three parallel subagents, then compare wall-clock time and cost with your single-agent baseline.</p>
+      <ol class="lab__steps">
+        <li><p>Confirm the three modules are ready. <code>ops/invert</code>, <code>ops/flip</code> and <code>ops/crop</code> should all appear in the list.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+python scripts/status.py --next</code></pre></div>
+        </li>
+        <li><p>Open a fresh session. Your Stop hook from Lesson 04 stays active, so the lead cannot finish while any ported module fails its tests.</p>
+          <div class="cmd"><pre><code>claude</code></pre></div>
+        </li>
+        <li><p>Note the time on your clock, then type this prompt.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Use three subagents in parallel, one per module, to port kestrel/ops/invert.py, kestrel/ops/flip.py and kestrel/ops/crop.py, with their tests in tests/ops/, to ts/src/ops/ and ts/test/ops/, following MIGRATION.md.
+
+Each subagent must run scripts/verify.sh on its module until it exits 0, then reply in at most 5 lines:
+MODULE, VERIFY (pass or fail), RUNS (how many verify.sh runs), TRAPS (any trap it hit, or none), FILES (files it wrote).
+
+When all three have reported, show me their reports side by side, then run python scripts/status.py.</code></pre></div>
+        </li>
+        <li><p>When the lead finishes, note the time again and check the session cost.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
+        </li>
+        <li><p>Ask the lead a question it should not be able to answer well.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Which files did the crop subagent read, and what did its first failing test say? Answer only from what you actually received.</code></pre></div>
+        </li>
+        <li><p>Add a row to <code>notes/baseline.md</code> in the same columns you used in Lesson 05: run name <code>L06 3 subagents</code>, 3 modules, wall-clock, total cost from <code>/usage</code>, and cost per module (total divided by 3).</p></li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Three Agent tool calls start together, then three short reports arrive. <code>status.py</code> shows <code>invert</code>, <code>flip</code> and <code>crop</code> ported with passing tests, and <code>ts/src/index.ts</code> gains three export lines. If one worker reports trouble editing <code>index.ts</code> because another worker changed it first, that is the shared-file collision from Part three; Lesson 14 fixes it properly. Your answer to step 5 should be thin: the lead knows what the reports said and little else. Wall-clock time per module should beat your baseline; cost per module probably will not.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Change the report format so each worker must also list any line in <code>MIGRATION.md</code> it found unclear. Run it on one more ready op and see whether the lead now learns something it could not learn before. That is a cheap fix for a lossy handoff.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Split only when you can name the reason: isolation, parallelism, specialization or independent judgement. Every split costs tokens, coordination and lost detail, so design the report format as carefully as the task.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 07 · Orchestrator and worker models. The lead and its workers do different jobs, so they should not all run on the same model.</div>
+</section>

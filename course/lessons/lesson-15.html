@@ -1,0 +1,185 @@
+<section class="lesson" id="lesson-15" data-week="3" data-title="Testing a team" data-minutes="15">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 15</span>
+    <span class="meta">Week 3 · Systems</span>
+    <span class="meta">~15 min</span>
+    <span class="scale" data-scale="10-25">10–25 agents</span>
+  </div>
+  <h1>Testing a team</h1>
+  <p class="lesson__deck">All 24 modules pass their own tests. That tells you each agent did its own job. It does not yet tell you the jobs fit together, and that is the question this lesson answers.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>Two kinds of check</h2>
+  <p>Every porter in this course has worked against a <b>per-node check</b>: <code>scripts/verify.sh kestrel/&lt;path&gt;.py</code> runs one module's Python tests and its ported TypeScript tests, and passes only if both pass and every Python test name appears in the TypeScript file. It is fast, it is local to one agent's work, and it makes a good loop exit condition. It answers "does this module do what its tests say?"</p>
+  <p>An <b>end-to-end check</b> asks a different question: does the whole system, run the way a user runs it, produce the right result? For Kestrel, a user runs the CLI on an image file with a pipeline spec such as <code>"gray|threshold:128"</code>. The end-to-end check runs that same command on both implementations and compares what comes out.</p>
+  <p>This is <b>differential testing</b>: you check a new implementation by running it beside a trusted one on the same inputs and comparing outputs. A migration is the ideal case, because you already have the trusted implementation. The Python version is the <b>oracle</b>, the thing whose answer counts as correct by definition. You never have to write down what the right bytes are; Python produces them.</p>
+
+  <h2><span class="h2num">Part two</span>How a team passes every test and still fails</h2>
+  <p>A single agent porting all 24 modules would carry one set of assumptions through the whole job. A team does not. Every <b>seam</b>, the place where one module calls another, now has a different agent on each side, each working from its own context. When they assume slightly different things about the data crossing the seam, you get <b>contract drift</b>.</p>
+  <p>The per-node tests rarely catch it, for three reasons that all apply to Kestrel.</p>
+  <ul>
+    <li><b>Ported tests mirror Python tests.</b> In Python, both sides of every seam were written together in one codebase, so the original authors never needed tests for the seams themselves. The ported test suite inherits that gap.</li>
+    <li><b>Tests build their own inputs.</b> <code>ts/test/ops/threshold.test.ts</code> constructs a small image by hand. If the <code>image</code> porter and the <code>threshold</code> porter understood pixels differently, each test still passes against its own idea of a pixel.</li>
+    <li><b>Round-trip tests hide format drift.</b> <code>tests/io/test_ppm.py</code> checks that parsing a formatted image gives the image back. The PPM parser is deliberately lenient about whitespace (trap T5), so a TypeScript writer that lays out whitespace differently from Python still round-trips perfectly.</li>
+  </ul>
+  <p>Small tests make this worse. A test that formats a 2×2 image never exercises behaviour that only appears on wider rows. The samples in <code>samples/</code> are bigger and messier than unit-test inputs, which is why the end-to-end check runs on them.</p>
+
+  <h2><span class="h2num">Part three</span>The differential test</h2>
+  <p><code>scripts/difftest.py</code> takes one spec. For every <code>.ppm</code> and <code>.pgm</code> file in <code>samples/</code> (the starter ships <code>tiny.ppm</code>, <code>gradient.ppm</code>, <code>noisy.ppm</code> and <code>checker.pgm</code>), it runs <code>python -m kestrel.cli</code> and, from <code>ts/</code>, <code>npx tsx src/cli.ts</code> with the same input, output path and spec. It compares exit codes and output bytes, prints one row per sample, and ends with a line like <code>4/4 samples match for spec 'gray|threshold:128'</code>. It exits 0 when everything matches, 1 on any mismatch, and 2 if the TypeScript CLI cannot run yet.</p>
+  <p>Specs chain steps with <code>|</code>, and a step's arguments follow a colon, separated by commas: <code>crop:0,0,4,4|gray|threshold:128|blur:1</code>. The step names live in the <code>STEPS</code> table in <code>kestrel/pipeline/steps.py</code>.</p>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 265" role="img" aria-label="Each sample flows through Python parse, run spec and format, and through the TypeScript equivalents; a compare node checks the two outputs byte for byte">
+      <text class="g-cap" x="380" y="18" text-anchor="middle">Python: the oracle</text>
+      <g class="g-node g-node--data" data-node="samples"><rect x="20" y="108" width="110" height="44" rx="8"/><text x="75" y="135">samples/*</text></g>
+      <g class="g-node g-node--worker" data-node="py-parse"><rect x="170" y="30" width="120" height="44" rx="8"/><text x="230" y="57">py: parse</text></g>
+      <g class="g-node g-node--worker" data-node="py-run"><rect x="320" y="30" width="120" height="44" rx="8"/><text x="380" y="57">py: run spec</text></g>
+      <g class="g-node g-node--worker" data-node="py-format"><rect x="470" y="30" width="120" height="44" rx="8"/><text x="530" y="57">py: format</text></g>
+      <g class="g-node g-node--worker" data-node="ts-parse"><rect x="170" y="186" width="120" height="44" rx="8"/><text x="230" y="213">ts: parse</text></g>
+      <g class="g-node g-node--worker" data-node="ts-run"><rect x="320" y="186" width="120" height="44" rx="8"/><text x="380" y="213">ts: run spec</text></g>
+      <g class="g-node g-node--worker" data-node="ts-format"><rect x="470" y="186" width="120" height="44" rx="8"/><text x="530" y="213">ts: format</text></g>
+      <g class="g-node g-node--check" data-node="cmp"><rect x="615" y="108" width="95" height="44" rx="8"/><text x="662" y="135">compare</text></g>
+      <path class="g-edge" d="M130 122 L170 52"/>
+      <path class="g-edge" d="M130 138 L170 208"/>
+      <path class="g-edge" d="M290 52 L320 52"/>
+      <path class="g-edge" d="M440 52 L470 52"/>
+      <path class="g-edge" d="M290 208 L320 208"/>
+      <path class="g-edge" d="M440 208 L470 208"/>
+      <path class="g-edge" d="M590 52 L640 108"/>
+      <path class="g-edge" d="M590 208 L640 152"/>
+      <text class="g-cap" x="380" y="252" text-anchor="middle">TypeScript port: every box here passed verify.sh on its own</text>
+    </svg>
+    <figcaption>The differential test. Each TypeScript box can pass its own tests while the bytes at the compare node still differ. The parse, run and format boxes stand for <code>io/*</code>, <code>pipeline/*</code> plus the ops, and <code>cli</code>.</figcaption>
+  </figure>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p>Every module passes <code>verify.sh</code>. You run difftest with three specs: <code>"gray|threshold:128"</code>, <code>"invert"</code> and <code>"blur:1"</code>. All three report <code>2/4 samples match</code>, and in each case the mismatches are <code>gradient.ppm</code> and <code>noisy.ppm</code>. Exit codes and output sizes are identical; only the bytes differ. Where do you look first?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>At the path every spec shares. Three unrelated steps fail on the same two files, so the steps are unlikely to be the cause. Both failing files are PPM and wider than <code>tiny.ppm</code>, and <code>checker.pgm</code> is fine. Same size with different bytes suggests a whitespace swap, such as a newline where Python writes a space. The first suspect is the PPM writer in <code>io/ppm</code>, then <code>cli</code>. Looking at which samples fail across several specs often narrows things faster than reading any code.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Attribution: which node broke it</h2>
+  <p>When the end-to-end check fails, the next question is <b>attribution</b>: which module, and so which agent's work, is responsible. With 24 modules written by many agents, guessing is expensive. Bisect instead. To <b>bisect</b> is to cut the search space in half, or at least into pieces, with each test. You have three axes to cut along.</p>
+  <ol>
+    <li><b>By step.</b> Run each prefix of the failing spec: <code>gray</code>, then <code>gray|threshold:128</code>. The first prefix that fails names the first bad step. If one step fails alone, check which op module it calls in the <code>STEPS</code> table.</li>
+    <li><b>By sample.</b> Ask what the failing samples have in common: format, size, colour or gray, values that land exactly on .5 after a division (trap T1 territory).</li>
+    <li><b>By spec.</b> If unrelated specs fail on the same samples, the fault sits in the shared path: parsing, formatting, the runner or the CLI.</li>
+  </ol>
+  <p>Once a module is named, run <code>verify.sh</code> on it. If its own tests pass, you have learned two things at once: where the bug is, and that the module's tests have a gap. The trace below shows a bisecting subagent at work on the scenario from the prediction. It is illustrative; your failure, if you have one, will look different.</p>
+
+  <div class="trace wide">
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: python scripts/difftest.py "gray|threshold:128"</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">gradient.ppm MISMATCH, noisy.ppm MISMATCH (same exit code, same size). 2/4 samples match.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: python scripts/difftest.py "gray"</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">2/4 samples match. Same two files fail.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: python scripts/difftest.py "invert"</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">2/4 samples match. Same two files fail.</span></div>
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">Different steps, same failing files. Both are PPM and have rows far wider than tiny.ppm. Suspect the shared path: io/ppm formatting.</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Bash: scripts/verify.sh kestrel/io/ppm.py</span></div>
+    <div class="trace__row" data-kind="result"><span class="trace__k">result</span><span class="trace__v">PASS io/ppm: Python and TypeScript tests pass</span></div>
+    <div class="trace__row" data-kind="tool"><span class="trace__k">tool</span><span class="trace__v">Read: ts/src/io/ppm.ts</span></div>
+    <div class="trace__row" data-kind="think"><span class="trace__k">think</span><span class="trace__v">formatPpm breaks lines at 70 characters, as some PPM writers do. Python writes one line per pixel row. The ported format test uses a tiny image whose rows never reach 70 characters, and the round-trip test passes because the parser accepts any whitespace.</span></div>
+    <div class="trace__row" data-kind="stop"><span class="trace__k">stop</span><span class="trace__v">Report: io/ppm formatPpm wraps long rows. Own tests pass. Smallest repro: a 1-row image with 8 pixels. Missing test: format a row longer than 70 characters and compare with Python's bytes.</span></div>
+  </div>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>The bisector names <code>io/ppm</code>, whose own tests pass. What is the best next step?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Mark the two samples as flaky in your notes and move on, since every unit test is green.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="true"><span class="k">B</span><span class="t">Add a test to <code>ts/test/io/ppm.test.ts</code> that fails on the wide-row case, then have the module's owner fix the code until it passes.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="false"><span class="k">C</span><span class="t">Change difftest to ignore whitespace differences, since any PPM reader accepts both layouts.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Throw away <code>ppm.ts</code> and have a fresh porter redo it from scratch.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>The output is wrong on every spec for two of four samples. Nothing about it is random, and calling it flaky teaches everyone to ignore the end-to-end gate.</p></div>
+        <div class="fb" data-fb="b" data-verdict="right"><div class="vd">Yes</div><p>Push the check down. The end-to-end failure becomes a per-node test, so the cheap, fast gate catches this bug next time, including in any future re-port. Writing the failing test first also proves you reproduced the right bug. <code>verify.sh</code> only requires every Python test name to appear in the TypeScript file, so an extra TypeScript case is allowed.</p></div>
+        <div class="fb" data-fb="c" data-verdict="wrong"><div class="vd">Not this one</div><p>Byte-identical output is the contract you chose for this migration. Loosening it might be a reasonable decision, but it is a contract change to make on purpose and record in <code>MIGRATION.md</code>. Making it to turn a red test green hides the next real difference as well.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>A fresh porter reads the same Python and the same tests, so nothing stops it from making the same choice. You pay for a full port and learn nothing. Fix the gap in the tests first.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part five</span>Where each check lives in a team</h2>
+  <p>Put the two checks at different points in the graph. Each worker runs its per-node gate before it hands off, as your porters already do. The end-to-end gate runs at integration points: after each merge, or after each wave once the CLI exists. It belongs to the orchestrator or the integrator, the agent that sees the whole system, and never to a worker grading its own module. That is the reviewer independence from Lesson 10, applied to a team.</p>
+  <p>The end-to-end gate is also cheap. A difftest run starts the two CLIs a few times each and burns no model tokens. Compared with what one agent turn costs, you can afford to run a handful of specs after every merge.</p>
+  <p>Finally, every end-to-end failure should leave a per-node test behind. Over a long migration, that is how the fast gate gets stronger and the slow gate fires less often. At 240 modules in Week 4, you will need the fast gate to carry most of the load.</p>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-15">
+    <div class="lab__head">
+      <span class="label">Lab 15 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $1.00–$3.00</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Run the differential end-to-end test across several specs, then use a bisecting subagent to attribute a failure to one module.</p>
+      <ol class="lab__steps">
+        <li><p>Confirm all 24 modules are ported and passing, then save this state so you can return to it. If <code>kestrel-starter</code> is not a git repo yet, run the first line too.</p>
+          <div class="cmd"><pre><code>cd kestrel-starter
+git init -q &amp;&amp; printf 'ts/node_modules/\n__pycache__/\n.pytest_cache/\n' &gt;&gt; .gitignore
+python scripts/status.py
+git add -A &amp;&amp; git commit -qm "week 3: all modules ported"</code></pre></div>
+        </li>
+        <li><p>Run the differential test on specs that exercise different steps and traps: T1 in blur, T3 in wrap padding, T2 in resize.</p>
+          <div class="cmd"><pre><code>for spec in "gray|threshold:128" "blur:1" "pad:2,wrap" "resize:5,3" "rotate:3" "equalize" "crop:0,0,2,2|invert"; do
+  python scripts/difftest.py "$spec" | tail -1
+done</code></pre></div>
+        </li>
+        <li><p>Create the bisecting subagent. It is read-only plus Bash, like your reviewer.</p>
+          <div class="cmd" data-file=".claude/agents/bisector.md"><pre><code>---
+name: bisector
+description: Finds which ported module causes a failing scripts/difftest.py spec. Use when difftest reports a mismatch.
+tools: Read, Grep, Glob, Bash
+model: sonnet
+maxTurns: 30
+---
+You find the module responsible for an end-to-end mismatch. You never edit files.
+
+1. Run python scripts/difftest.py "&lt;spec&gt;" and note which samples fail.
+2. Bisect by step: run each prefix of the spec (split on "|"). The first
+   failing prefix names the first bad step.
+3. Bisect by spec: run one or two unrelated single-step specs. If they fail
+   on the same samples, suspect the shared path: io/ppm, io/pgm,
+   pipeline/runner, cli.
+4. Map the step to its op module using STEPS in kestrel/pipeline/steps.py.
+5. Run scripts/verify.sh on each suspect module, then compare the Python and
+   TypeScript code for the function involved.
+
+Report: failing spec and samples, first failing prefix, suspect module and
+function, whether its own tests pass, the smallest input that shows the
+difference, and the test case that would have caught it.</code></pre></div>
+        </li>
+        <li><p>If every spec matched, plant a bug to find. This headless run changes one TypeScript file so that difftest fails while that module's own <code>verify.sh</code> still passes. It does not tell you which file.</p>
+          <div class="cmd"><pre><code>claude -p "Make one small, realistic change to a single file under ts/src/ so that python scripts/difftest.py reports a mismatch for at least one of these specs: gray|threshold:128, blur:1, invert. scripts/verify.sh for the module you change must still exit 0. Do not edit any test file and do not commit." \
+  --model sonnet --max-turns 20 --max-budget-usd 1 \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Glob,Grep,Bash(scripts/*),Bash(python scripts/*),Bash(npx vitest*)" \
+  &lt; /dev/null &gt; /dev/null</code></pre></div>
+        </li>
+        <li><p>Hand the failure to the bisector.</p>
+          <div class="cmd"><pre><code>claude --model opus</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Run scripts/difftest.py on these specs: "gray|threshold:128", "blur:1", "invert", "pad:2,wrap". For any spec that mismatches, use the bisector agent to find the module responsible. Then show me the test case you would add to that module's TypeScript test so verify.sh would have caught it. Do not edit anything.</code></pre></div>
+        </li>
+        <li><p>Check the bisector's answer against the truth, then restore the ported code.</p>
+          <div class="cmd"><pre><code>git diff --stat
+git diff
+git checkout -- ts/src</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Each difftest line ends with something like <code>4/4 samples match for spec 'blur:1'</code>. If a real mismatch shows up in step 2, you have found genuine contract drift from your own team, which is the best outcome of this lab: bisect it, add the missing test, fix it. Otherwise, after step 4 at least one spec mismatches, the bisector names a module whose own tests pass, and <code>git diff</code> confirms or refutes its answer. Note in <code>notes/baseline.md</code> how many turns and how much the bisection cost compared with porting one module.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Add the bisector's suggested test case for real, run <code>scripts/verify.sh</code> on the module with the planted bug still in place to watch it fail, then restore and watch it pass. That is the push-down from Part five, done once by hand.</p></div>
+    </div>
+  </div>
+
+  <div class="c-note"><p><b>Before Week 4.</b> Your <code>kestrel-starter</code> now holds a complete, verified port, committed to git. Keep it as your reference. Week 4 re-ports Kestrel at scale with 10 to 20 agents, so it starts from a fresh copy: a new copy of the starter from the course repo into <code>kestrel-scale/</code> (or, if you prefer, a reset of <code>ts/</code> with <code>git stash</code>). Bring your <code>.claude/agents/</code> files, <code>scripts/gen_barrel.py</code>, the Stop gate and your filled-in <code>MIGRATION.md</code> Known traps with you; they are what you learned.</p></div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Per-node checks prove each agent did its job; only an end-to-end check against the oracle proves the jobs fit together. When the end-to-end check fails, bisect by step, sample and spec to name the module, then turn the failure into a per-node test.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 16 · Workflows: orchestration as code. Week 4 moves the orchestration out of the conversation and into a script that can run a hundred agents.</div>
+</section>

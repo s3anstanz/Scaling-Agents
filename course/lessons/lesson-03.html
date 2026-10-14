@@ -1,0 +1,171 @@
+<section class="lesson" id="lesson-03" data-week="1" data-title="Context is the bottleneck" data-minutes="14">
+  <div class="lesson__eyebrow">
+    <span class="chip">Lesson 03</span>
+    <span class="meta">Week 1 · One agent</span>
+    <span class="meta">~14 min</span>
+    <span class="scale" data-scale="1">1 agent</span>
+  </div>
+  <h1>Context is the bottleneck</h1>
+  <p class="lesson__deck">A model can only act on what is in front of it. This lesson looks at what an agent actually sees, why more is often worse, and how a short file of rules does more for a port than a long conversation.</p>
+  <hr class="rule-sep">
+
+  <h2><span class="h2num">Part one</span>What the agent sees</h2>
+  <p>Every model call in the loop gets one input, called the <b>context</b>: all the text the model reads before writing its next message. The space for it is the <b>context window</b>, which has a fixed size. Think of it as the agent's working memory. Anything outside it does not exist for that call.</p>
+  <p>For a Claude Code session in <code>kestrel-starter</code>, the context is built from five sources.</p>
+  <ul>
+    <li><b>The system prompt.</b> Claude Code's own instructions and the definitions of the tools it can call. You do not write this one for the main session. You will write your own when you define subagents in Week 2.</li>
+    <li><b><code>CLAUDE.md</code>.</b> Loaded automatically at the start of every session. The starter's version is short on purpose: the goal, and six rules (read <code>MIGRATION.md</code> first, <code>verify.sh</code> defines done, never edit the Python, port in dependency order, trust <code>status.py</code> over reports, record traps).</li>
+    <li><b>Your prompt.</b> The task, plus whatever exit conditions you wrote into it.</li>
+    <li><b>Files it chooses to read.</b> <code>kestrel/core/color.py</code>, <code>tests/core/test_color.py</code>, <code>MIGRATION.md</code>. The agent decides these, guided by everything above.</li>
+    <li><b>Tool output.</b> Every command result, test failure and directory listing, appended as the loop runs.</li>
+  </ul>
+
+  <figure class="graph wide">
+    <svg viewBox="0 0 720 260" role="img" aria-label="Five sources feed the context window, which feeds the model; the model's tool calls add more tool output to the context">
+      <g class="g-node g-node--data" data-node="sys"><rect x="20" y="15" width="150" height="36" rx="8"/><text x="95" y="38">System prompt</text></g>
+      <g class="g-node g-node--data" data-node="claude"><rect x="20" y="63" width="150" height="36" rx="8"/><text x="95" y="86">CLAUDE.md</text></g>
+      <g class="g-node g-node--human" data-node="prompt"><rect x="20" y="111" width="150" height="36" rx="8"/><text x="95" y="134">Your prompt</text></g>
+      <g class="g-node g-node--data" data-node="files"><rect x="20" y="159" width="150" height="36" rx="8"/><text x="95" y="182">Files it reads</text></g>
+      <g class="g-node g-node--data" data-node="out"><rect x="20" y="207" width="150" height="36" rx="8"/><text x="95" y="230">Tool output</text></g>
+      <g class="g-node g-node--data" data-node="ctx"><rect x="300" y="95" width="160" height="70" rx="8"/><text x="380" y="135">Context window</text></g>
+      <g class="g-node g-node--orch" data-node="model"><rect x="560" y="105" width="140" height="50" rx="8"/><text x="630" y="135">Model</text></g>
+      <path class="g-edge" d="M170 33 C 235 33, 235 110, 300 110"/>
+      <path class="g-edge" d="M170 81 C 235 81, 235 120, 300 120"/>
+      <path class="g-edge" d="M170 129 L300 130"/>
+      <path class="g-edge" d="M170 177 C 235 177, 235 140, 300 140"/>
+      <path class="g-edge" d="M170 225 C 235 225, 235 150, 300 150"/>
+      <path class="g-edge" d="M460 130 L560 130"/>
+      <path class="g-edge g-edge--loop" d="M630 155 C 630 245, 260 245, 172 228"/>
+      <text class="g-cap" x="330" y="256">every tool call adds more</text>
+    </svg>
+    <figcaption>The first three sources are fixed when the run starts. The last two grow with every iteration, and the agent chooses what goes into them.</figcaption>
+  </figure>
+
+  <p>The first three sources are set before the run starts. The last two are where the agent spends its window, and they grow on every pass around the loop. A port of <code>color.py</code> ends with a context made mostly of things the agent decided to read and commands it decided to run.</p>
+
+  <h2><span class="h2num">Part two</span>Why reading everything hurts</h2>
+  <p>It is tempting to tell an agent to read the whole repo first so it has the full picture. On Kestrel that would mean all 24 Python modules, their tests and the scripts. It costs three ways.</p>
+  <p><b>It costs money on every later call.</b> As Lesson 02 showed, each model call carries the whole conversation. Files read in the first iteration are paid for again in the twentieth.</p>
+  <p><b>It buries the detail that matters.</b> The single most important line for porting <code>color.to_gray</code> is the docstring saying it rounds half to even. In a context holding thousands of lines of unrelated <code>ops/</code> code, that line is easier to miss. Models attend better to a short, relevant context than to a long, mostly irrelevant one.</p>
+  <p><b>It fills the window.</b> When a long session gets close to the limit, something has to give. Part four covers what Claude Code does then, and why you would rather not rely on it.</p>
+
+  <div class="ex wide c-predict" data-component="predict">
+    <div class="ex__head"><span class="dot"></span><span class="label">Predict first</span></div>
+    <div class="ex__body">
+      <p><code>errors</code> and <code>mathutil</code> are already ported. To port <code>kestrel/core/color.py</code> well, which files does the agent actually need to read?</p>
+      <div class="btn-row"><button class="btn" data-reveal aria-expanded="false">Reveal</button></div>
+      <div class="c-reveal" data-reveal-panel><div class="c-reveal__inner"><div class="c-reveal__card">
+        <div class="label">The answer</div>
+        <p>About four. <code>kestrel/core/color.py</code> (the source), <code>tests/core/test_color.py</code> (the behaviour to match), <code>ts/src/core/mathutil.ts</code> (because <code>color</code> imports <code>clamp_byte</code> and <code>round_half_even</code>, and the port must import their TypeScript versions by their ported names), and <code>MIGRATION.md</code> (the rules). It does not need any of <code>ops/</code>, <code>io/</code> or <code>pipeline/</code>. Note that the useful file for the dependency is the <i>ported</i> one. Rereading <code>mathutil.py</code> would invite the agent to reimplement rounding inline instead of importing the helper that already passes its tests.</p>
+      </div></div></div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part three</span>A contract in a file</h2>
+  <p>Ports done in different sessions have to fit together. <code>image.ts</code> will import from <code>color.ts</code>; every op will import from <code>image.ts</code>. If one session names a function <code>toGray</code> and another expects <code>to_gray</code>, the code does not link, even though each module passes its own tests.</p>
+  <p>A <b>contract</b> is the written agreement every port follows: how names change, how Python types map to TypeScript, where tests go and how they are ported, and which traps to avoid. In the starter, that contract is <code>MIGRATION.md</code>. <code>CLAUDE.md</code> stays short and points to it.</p>
+  <p>The split is deliberate. <code>CLAUDE.md</code> loads into every session, and in Week 2 it also loads into every subagent, so each line in it is paid for many times over. <code>MIGRATION.md</code> is read when a port begins, by the agents that need it. Keep the always-loaded file to what every task needs and let it point to the rest.</p>
+  <p>The contract has one more job. Agents do not remember earlier sessions; files do. When the <code>mathutil</code> run in Lab 02 discovered that <code>Math.trunc</code> breaks <code>floor_div</code>, that knowledge lived only in that run's context, and it vanished when the run ended. The <b>Known traps</b> section at the end of <code>MIGRATION.md</code> is where it should go, and the starter's <code>CLAUDE.md</code> already tells agents to add a bullet there when they find a difference. Some of your runs may have started doing it. Once a trap is written there, every later port reads it before writing a line. This is the cheapest form of learning an agent system has, and it scales: in Week 3, a dozen agents will read the same traps list.</p>
+
+  <div class="ex wide c-mcq" data-component="mcq">
+    <div class="ex__head"><span class="dot"></span><span class="label">Check yourself</span></div>
+    <div class="ex__body">
+      <p>Your <code>color</code> port hit T1: <code>Math.round(2.5)</code> is 3, but Kestrel must produce 2. Twelve modules still to be ported use the same rounding. Where should that lesson go?</p>
+      <ul class="c-mcq__opts">
+        <li><button class="opt" data-fb="a" data-correct="false"><span class="k">A</span><span class="t">Tell the agent in the current session, so it remembers for the next module.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="b" data-correct="false"><span class="k">B</span><span class="t">Add a detailed paragraph about rounding to <code>CLAUDE.md</code>.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="c" data-correct="true"><span class="k">C</span><span class="t">Append an entry to the Known traps section of <code>MIGRATION.md</code>.</span><span class="mk" aria-hidden="true"></span></button></li>
+        <li><button class="opt" data-fb="d" data-correct="false"><span class="k">D</span><span class="t">Nowhere. The tests will catch it again for each module.</span><span class="mk" aria-hidden="true"></span></button></li>
+      </ul>
+      <div class="c-mcq__fb">
+        <div class="fb is-shown" data-fb="idle" data-verdict="idle"><div class="vd">Pick one</div><p>Every option has a reason attached.</p></div>
+        <div class="fb" data-fb="a" data-verdict="wrong"><div class="vd">Not this one</div><p>It helps for the rest of this one session, and only if the remark survives compaction. Every new session, headless run or subagent starts without it. Conversation is the least durable place to put knowledge.</p></div>
+        <div class="fb" data-fb="b" data-verdict="wrong"><div class="vd">Not this one</div><p>Durable, but in the wrong file. <code>CLAUDE.md</code> loads into every session for every task, including ones that never touch rounding. A one-line pointer there is fine; the detail belongs in the porting contract that ports read.</p></div>
+        <div class="fb" data-fb="c" data-verdict="right"><div class="vd">Yes</div><p>It lives in a file, so it survives sessions. It sits in the contract every port reads before starting, so it reaches exactly the agents that need it. And it names the fix (import <code>roundHalfEven</code> from <code>mathutil.ts</code>), so later ports get it right the first time instead of failing and recovering.</p></div>
+        <div class="fb" data-fb="d" data-verdict="wrong"><div class="vd">Not this one</div><p>The tests will catch it, and each agent will pay several iterations to rediscover it. Twelve modules times a few wasted turns adds up, and some ports will thrash on it. Tests are the safety net; the contract is how you avoid falling in the first place.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <h2><span class="h2num">Part four</span>Context rot and compaction</h2>
+  <p>Long sessions degrade in a predictable way, sometimes called <b>context rot</b>. Instructions from the start of the session are still in the window, but they are now a small part of a large context. The agent read <code>color.ts</code> before editing it, so the old version is still there next to the new one. Test output from three attempts ago sits beside the current output. The model has to work out which of these is current, and it does not always get it right.</p>
+  <p>When a session approaches the window limit, Claude Code <b>compacts</b> it: it replaces older parts of the conversation with a summary so the session can continue. That keeps the session alive, but a summary drops detail. A summary tends to lose the exact failing assertion, the precise line of <code>MIGRATION.md</code> that mattered, and the reason an approach was abandoned.</p>
+  <p>Three working rules follow, and the rest of the course builds on them.</p>
+  <ol>
+    <li><b>One task per context.</b> One module per run or session. Porting all of wave L1 in one long session is how you get rot. A fresh run per module is cheaper and cleaner.</li>
+    <li><b>Durable facts go in files.</b> Traps, decisions and conventions belong in <code>MIGRATION.md</code>, where every run reads the current version. The conversation is scratch space.</li>
+    <li><b>Give each agent the smallest context that is enough.</b> This is the main reason to use subagents in Week 2. Each gets a fresh context with only its task, and only its final report comes back.</li>
+  </ol>
+
+  <div class="lab wide" data-component="lab" data-lab-id="lab-03">
+    <div class="lab__head">
+      <span class="label">Lab 03 · In Claude Code</span>
+      <span class="lab__meta">~20 min · est. $0.50–$2.50</span>
+    </div>
+    <div class="lab__body">
+      <p class="lab__goal"><b>Goal.</b> Port <code>color.py</code> twice, once without <code>CLAUDE.md</code> and once with it, compare the results, then write T1 and T2 into the Known traps section of <code>MIGRATION.md</code>.</p>
+      <ol class="lab__steps">
+        <li><p>From the repo root, activate the environment and confirm the tree is clean (no output from <code>git status</code>).</p>
+          <div class="cmd"><pre><code>source .venv/bin/activate
+git status --short</code></pre></div>
+        </li>
+        <li><p>Run the port in bare mode. <code>--bare</code> skips <code>CLAUDE.md</code> (along with hooks, plugins, MCP servers and subagent discovery). The prompt deliberately does not mention <code>MIGRATION.md</code> or the barrel file.</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude --bare -p "Port kestrel/core/color.py to TypeScript at ts/src/core/color.ts and its tests from tests/core/test_color.py to ts/test/core/color.test.ts. Run scripts/verify.sh kestrel/core/color.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with up to five lines: the files you read, and any Python-vs-JavaScript difference you had to handle." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/color-bare.json
+echo "color-bare $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt</code></pre></div>
+          <div class="c-note"><p><b>If bare mode will not start.</b> Because <code>--bare</code> skips more than <code>CLAUDE.md</code>, some login setups do not work with it. In that case run <code>mv CLAUDE.md CLAUDE.md.off</code>, run the same command without <code>--bare</code>, and run <code>mv CLAUDE.md.off CLAUDE.md</code> before step 4.</p></div>
+        </li>
+        <li><p>Inspect the bare result and keep a copy of it.</p>
+          <div class="cmd"><pre><code>python scripts/runinfo.py notes/runs/color-bare.json
+scripts/verify.sh kestrel/core/color.py; echo "exit=$?"
+git status --short
+cp ts/src/core/color.ts notes/color.bare.ts</code></pre></div>
+        </li>
+        <li><p>Reset the TypeScript tree and the contract to the checkpoint. The reset leaves <code>notes/</code> alone, so your records survive; afterwards <code>git status</code> should list only files under <code>notes/</code>.</p>
+          <div class="cmd"><pre><code>git checkout -- ts/ MIGRATION.md &amp;&amp; git clean -fdq ts/
+git status --short</code></pre></div>
+        </li>
+        <li><p>Run the identical prompt in a normal run, which loads <code>CLAUDE.md</code>.</p>
+          <div class="cmd"><pre><code>start=$SECONDS
+claude -p "Port kestrel/core/color.py to TypeScript at ts/src/core/color.ts and its tests from tests/core/test_color.py to ts/test/core/color.test.ts. Run scripts/verify.sh kestrel/core/color.py and keep fixing until it exits 0. If the same test fails the same way twice in a row, stop and report the failure instead. Finish with up to five lines: the files you read, and any Python-vs-JavaScript difference you had to handle." \
+  --model sonnet \
+  --max-turns 20 --max-budget-usd 1 \
+  --output-format json \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
+  &gt; notes/runs/color.json
+echo "color $((SECONDS - start))" &gt;&gt; notes/runs/seconds.txt</code></pre></div>
+        </li>
+        <li><p>Compare the two runs. Check four things: do the exported names follow the naming rules in <code>MIGRATION.md</code> (snake_case becomes camelCase, so <code>to_gray</code> becomes <code>toGray</code>, and colours are <code>readonly [number, number, number]</code>); does <code>toGray</code> import the rounding helper from <code>./mathutil</code> or reimplement rounding inline (the T1 risk); did the run add an export line to <code>ts/src/index.ts</code>; and how do turns and cost differ?</p>
+          <div class="cmd"><pre><code>python scripts/runinfo.py notes/runs/color-bare.json notes/runs/color.json
+diff notes/color.bare.ts ts/src/core/color.ts
+grep -n "import\|export" notes/color.bare.ts ts/src/core/color.ts
+git diff ts/src/index.ts</code></pre></div>
+        </li>
+        <li><p>Write the traps into the contract properly. This run may only read and edit, and it must change nothing outside Known traps.</p>
+          <div class="cmd"><pre><code>claude -p "Our ports so far met two Python-vs-JavaScript traps. T1 rounding: Python round() sends exact halves to the even neighbour, JavaScript Math.round sends them up. T2 floor division: Python // floors toward negative infinity, Math.trunc cuts toward zero. Read notes/runs/mathutil.json, notes/runs/color.json and the TypeScript in ts/src/core/ to see how each trap was handled, and search kestrel/ for every module that calls round_half_even or floor_div. Then make the Known traps section of MIGRATION.md contain exactly one bullet for each trap, as the section itself asks: start with the label (T1 rounding, T2 floor division), then what differs, which Kestrel modules it bites, and the fix (which TypeScript helper to import from where). If earlier runs already added a bullet about either trap, rewrite that bullet instead of adding a second. Keep any other trap bullets. Change nothing else in the file." \
+  --model sonnet \
+  --max-turns 12 --max-budget-usd 0.5 \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Glob,Grep"</code></pre></div>
+        </li>
+        <li><p>Review the diff yourself, then checkpoint.</p>
+          <div class="cmd"><pre><code>git diff MIGRATION.md
+scripts/verify.sh kestrel/core/color.py; echo "exit=$?"
+git add -A &amp;&amp; git commit -qm "lab 03: port color, record T1 and T2"</code></pre></div>
+        </li>
+      </ol>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Both runs will probably reach <code>exit=0</code>; the tests are the same either way. The differences show up in the shape of the code. A typical bare run names things however it likes, may reimplement rounding with its own helper, and leaves <code>ts/src/index.ts</code> alone. A typical normal run reads <code>MIGRATION.md</code> early (CLAUDE.md told it to), follows its naming, imports the rounding helper from <code>./mathutil</code>, and adds the barrel line. Your run may differ: some bare runs find <code>MIGRATION.md</code> by exploring, usually at a cost of extra turns. Another difference: the normal run may add a Known traps bullet on its own, because <code>CLAUDE.md</code> asks it to, while the bare run never does. After step 7, Known traps should hold one bullet each for T1 and T2, naming modules such as <code>color</code> and <code>blur</code> for T1 and <code>geometry</code>, <code>resize</code> and <code>rotate</code> for T2.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Run the normal port prompt again with <code>--max-turns 6</code> on a reset tree and see whether a tight cap changes what it chooses to read. Agents under pressure tend to skip the contract first, which is a good argument for putting the most important rule in the prompt as well.</p></div>
+    </div>
+  </div>
+
+  <div class="c-takeaway"><div class="label">Key takeaway</div><p>Give each run the smallest context that is enough, and keep what must last in files. <code>MIGRATION.md</code> is the contract every port reads, and its Known traps section is how your agents learn across sessions.</p></div>
+  <div class="teaser"><b>Next</b>Lesson 04 · Verification is the exit condition. Making the agent prove it is finished instead of saying so.</div>
+</section>
