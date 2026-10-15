@@ -134,9 +134,10 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Port the same three ops twice, once with Haiku workers and once with Sonnet workers under an Opus lead, and compare first-try pass rate and cost.</p>
       <ol class="lab__steps">
-        <li><p>Save a copy of the barrel file so you can reset between runs.</p>
+        <li><p>Save copies of the barrel file and <code>MIGRATION.md</code> so you can reset between runs.</p>
           <div class="cmd"><pre><code>source .venv/bin/activate
-cp ts/src/index.ts notes/index.ts.before-l07</code></pre></div>
+cp ts/src/index.ts notes/index.ts.before-l07
+cp MIGRATION.md notes/MIGRATION.md.before-l07</code></pre></div>
         </li>
         <li><p>Start an Opus lead with Haiku as the default worker model.</p>
           <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
@@ -156,6 +157,7 @@ Do not pass a model parameter on the subagent calls. When all three report, show
           <div class="cmd"><pre><code>rm ts/src/ops/grayscale.ts ts/src/ops/threshold.ts ts/src/ops/brightness.ts
 rm ts/test/ops/grayscale.test.ts ts/test/ops/threshold.test.ts ts/test/ops/brightness.test.ts
 cp notes/index.ts.before-l07 ts/src/index.ts
+cp notes/MIGRATION.md.before-l07 MIGRATION.md
 python scripts/status.py</code></pre></div>
         </li>
         <li><p>Start again with Sonnet workers, run the same prompt from step 3, then <code>/usage</code>.</p>

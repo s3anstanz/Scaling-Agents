@@ -131,7 +131,7 @@
           <div class="cmd"><pre><code>source .venv/bin/activate
 python scripts/status.py --next</code></pre></div>
         </li>
-        <li><p>Open a fresh session. Your Stop hook from Lesson 04 stays active, so the lead cannot finish while any ported module fails its tests.</p>
+        <li><p>Open a fresh session. Your Stop hook from Lesson 04 stays active, so the lead cannot finish while any ported module fails its tests. Workers may run in the background, so the hook can fire while one is still writing; the lead should wait for their reports and leave their files alone.</p>
           <div class="cmd"><pre><code>claude</code></pre></div>
         </li>
         <li><p>Note the time on your clock, then type this prompt.</p>
@@ -150,7 +150,7 @@ When all three have reported, show me their reports side by side, then run pytho
         </li>
         <li><p>Add a row to <code>notes/baseline.md</code> in the Lesson 05 columns: <code>L06 3 subagents</code> as the module, n/a for turns, the total cost from <code>/usage</code>, wall-clock minutes, and interactive; then note the cost per module (total divided by 3) under the table.</p></li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>Three Agent tool calls start together, then three short reports arrive. <code>status.py</code> shows <code>invert</code>, <code>flip</code> and <code>crop</code> ported with passing tests, and <code>ts/src/index.ts</code> gains three export lines. If one worker reports trouble editing <code>index.ts</code> because another worker changed it first, that is the shared-file collision from Part three; Lesson 14 fixes it properly. Your answer to step 5 should be thin: the lead knows what the reports said and little else. Wall-clock time per module should beat your baseline; cost per module probably will not.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Three Agent tool calls start together, then three short reports arrive. <code>status.py</code> shows <code>invert</code>, <code>flip</code> and <code>crop</code> ported with passing tests, and <code>ts/src/index.ts</code> gains three export lines, plus one or two explicit re-exports, because <code>ops/invert</code> and <code>core/color</code> both export <code>invert</code>. If one worker reports trouble editing <code>index.ts</code> because another worker changed it first, that is the shared-file collision from Part three; Lesson 14 fixes it properly. Your answer to step 5 should be thin: the lead knows what the reports said and little else. Wall-clock time per module should beat your baseline; cost per module probably will not.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Change the report format so each worker must also list any line in <code>MIGRATION.md</code> it found unclear. Run it on one more ready op and see whether the lead now learns something it could not learn before. That is a cheap fix for a lossy handoff.</p></div>
     </div>
   </div>
