@@ -76,7 +76,7 @@
   </figure>
 
   <p>The tree is lopsided, and that is normal. <code>ops/</code> is wide; <code>io/</code> is narrow. In the full library, <code>ops/</code> holds most of the 240 modules. One ops lead with a hundred-plus workers would just recreate the original problem one level down. So <code>ops/</code> gets a third layer: an ops lead with about ten group leads (filters, geometry ops, colour ops, and so on), each with about ten porters. Split wherever a node would otherwise have more children than it can read.</p>
-  <p>There are depth limits to design around. Subagents can spawn subagents up to three layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>). A workflow can call another workflow with <code>workflow()</code>, one level of nesting. A tree for Kestrel-240 fits: the workflow script acts as the root, a sub-lead agent is layer one, a group lead is layer two, and porters are layer three.</p>
+  <p>There are depth limits to design around. Subagents can spawn subagents up to three layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>). A workflow can call another workflow with <code>workflow()</code>, one level of nesting. A tree for Kestrel-240 fits if the levels below the root are not workflow agents: a lead session can use subagents as sub-lead, group lead and porter, or a workflow can nest one <code>workflow()</code> per package. Workflow agents themselves cannot start subagents.</p>
 
   <div class="c-table-wrap wide">
     <table class="c-table">

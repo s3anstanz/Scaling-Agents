@@ -102,8 +102,8 @@ return results</code></pre></div>
       <tr><td>Where saved</td><td><code>.claude/workflows/</code> (project) or <code>~/.claude/workflows/</code></td></tr>
       <tr><td>Watch and control</td><td><code>/workflows</code>: <code>p</code> pause, <code>x</code> stop, <code>s</code> save</td></tr>
       <tr><td>Script API</td><td><code>agent()</code>, <code>parallel()</code> (waits for all), <code>pipeline()</code> (no waiting between stages), <code>phase()</code>, <code>log()</code>, <code>args</code>, <code>budget</code>, <code>workflow()</code></td></tr>
-      <tr><td>Limits</td><td>16 agents at once by default (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, up to 256) · 1,000 agents per run · 4,096 items per call</td></tr>
-      <tr><td>Size guideline</td><td><code>workflowSizeGuideline</code>: small (&lt;5), medium (&lt;10, default), large (&lt;50), unrestricted. A warning appears above 25 agents or about 1.5M projected tokens.</td></tr>
+      <tr><td>Limits</td><td>Up to 16 agents at once (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, 1 to 256; smaller machines start lower) · 1,000 agents per run · 4,096 items per call</td></tr>
+      <tr><td>Size guideline</td><td><code>workflowSizeGuideline</code>: small (&lt;5), medium (&lt;10, default), large (&lt;50), unrestricted. A warning appears above 25 agents (50 with <code>large</code>) or about 1.5M projected tokens.</td></tr>
     </tbody>
   </table></div>
 

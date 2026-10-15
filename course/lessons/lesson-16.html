@@ -262,7 +262,7 @@ git add -A &amp;&amp; git commit -qm "week 4 setup" &amp;&amp; git tag fresh</co
         <li><p>Start Claude Code with a strong lead model and cheap workers. The lead only writes the script; the workers do the porting.</p>
           <div class="cmd"><pre><code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=16 CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
         </li>
-        <li><p>Ask for the workflow in plain words.</p>
+        <li><p>Ask for the workflow in plain words. Approve the script when Claude Code asks you to review it.</p>
           <div class="cmd" data-kind="prompt"><pre><code>Use a workflow to port every module in the next ready wave.
 Inside the workflow, a first haiku agent gets the wave from
 python scripts/status.py --next, so the saved workflow needs no arguments.
@@ -275,11 +275,11 @@ End with a log of green and red modules and any traps the porters reported,
 then have one agent run python scripts/gen_barrel.py.
 Name it port-wave.</code></pre></div>
         </li>
-        <li><p>While it runs, type <code>/workflows</code>. Find the phases and the agent labels. When it finishes, press <code>s</code> to save it. Then check what landed on disk and how the repo moved.</p>
+        <li><p>While it runs, type <code>/workflows</code>. Find the phases and the agent labels. When it finishes, press <code>s</code> to save it. Then check what landed on disk and how the repo moved. Open the saved script: if it reads the wave from <code>args</code> instead of a finder agent, replace it with the reference version in step 8 before going on.</p>
           <div class="cmd"><pre><code>ls .claude/workflows/
 python scripts/status.py</code></pre></div>
         </li>
-        <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one. Approve the script when Claude Code asks you to review it.</p>
+        <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
         </li>
         <li><p>Compare Claude's saved script with the reference version below. If yours takes the wave from <code>args</code> instead of a finder agent, or is missing an independent verify, a schema, or the null filter, replace it with this one. Do not rerun it now: <code>--next</code> would start wave L4. Lab 18 uses it from a reset.</p>
