@@ -241,7 +241,7 @@ R1 Tests: run scripts/verify.sh kestrel/&lt;path&gt;.py. Pass only on exit 0.
 R2 Coverage: every test function in the Python test file has a matching TS test in ts/test/&lt;path&gt;.test.ts with the same inputs and expected values. Give both counts.
 R3 Traps: for every entry in MIGRATION.md Known traps, check the TS code. Flag Math.round where Python used round(), Math.trunc or plain / where Python used //, a bare % whose left side can be negative, .sort() on numbers without a comparator, and header parsing that ignores # comments or irregular whitespace.
 R4 Contract: names and types follow MIGRATION.md; helpers are imported from already-ported modules, not copied.
-R5 Barrel: ts/src/index.ts has exactly one export line for the module.
+R5 Barrel: ts/src/index.ts has exactly one export line for the module, plus an explicit re-export where two modules export the same name.
 
 Reply in exactly this shape:
 VERDICT: PASS or FAIL
