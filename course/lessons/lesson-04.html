@@ -165,7 +165,7 @@
       <div class="c-code__notes">
         <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line.</p></div>
         <div class="cnote" data-note="s1"><div class="label">Line 3 · the event</div><p><code>Stop</code> fires when the main agent tries to finish. A sibling event, <code>SubagentStop</code>, does the same for subagents and tells the hook which kind of agent is stopping. You will use it in Week 2.</p></div>
-        <div class="cnote" data-note="s2"><div class="label">Line 4 · the command</div><p>The path is relative, so start Claude Code from the project root, in a shell where <code>.venv</code> is active. Then <code>python</code> and the tools the status script calls resolve correctly.</p></div>
+        <div class="cnote" data-note="s2"><div class="label">Line 4 · the command</div><p><code>$CLAUDE_PROJECT_DIR</code> is the project root, so the hook finds the script even after Claude has moved into <code>ts/</code>. Start Claude Code in a shell where <code>.venv</code> is active, so <code>python</code> and the tools the status script calls resolve correctly.</p></div>
       </div>
     </div>
   </div>

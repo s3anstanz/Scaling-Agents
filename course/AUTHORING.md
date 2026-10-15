@@ -86,18 +86,18 @@ export const meta = { name: 'port-wave', description: 'Port one dependency wave'
 // No Date.now(), Math.random(), filesystem or shell in the script itself — agents do the work.
 ```
 
-**Worktrees.** `claude --worktree <name>` (or `-w`) creates `.claude/worktrees/<name>/` on branch `worktree-<name>`. Subagent frontmatter `isolation: worktree` (or workflow `agent(..., {isolation:'worktree'})`) gives each agent its own temporary worktree, removed if it made no changes. `.worktreeinclude` copies git-ignored files (e.g. `node_modules`) in.
+**Worktrees.** `claude --worktree <name>` (or `-w`) creates `.claude/worktrees/<name>/` on branch `worktree-<name>`. Subagent frontmatter `isolation: worktree` (or workflow `agent(..., {isolation:'worktree'})`) gives each agent its own temporary worktree, removed if it made no changes. `.worktreeinclude` copies git-ignored files (e.g. `node_modules`) in. Symlinks are not copied, so `node_modules/.bin` is missing until `npm rebuild` runs.
 
 **Headless.** `claude -p "<prompt>"`; `--output-format text|json|stream-json` (json includes `total_cost_usd`, `num_turns`, and `structured_output` when `--json-schema '<schema>'` is given); `--max-turns N`; `--max-budget-usd X` (client-side estimate, can overshoot by one step); `--allowedTools "Read,Edit,Bash(scripts/*)"`; `--permission-mode acceptEdits`; `--model`; `--agents`; `--bare` (skips CLAUDE.md, hooks, plugins, MCP, subagent discovery). Running many in parallel from bash is plain shell (`&`, `xargs -P`), not a built-in feature; say so.
 
-**Loops & hooks.** `/loop 5m <prompt>` repeats on an interval; `/loop <prompt>` self-paces. **Stop hook**: a command in settings.json `hooks.Stop` that runs when Claude tries to finish; exiting with code 2 (stderr = reason) or printing `{"decision":"block","reason":"..."}` sends Claude back to work. Input JSON includes `stop_hook_active` (true if already continuing because of a stop hook — check it to avoid infinite loops). Claude Code caps consecutive stop-hook continuations at 8 (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`), resetting when Claude calls a tool. `SubagentStop` works the same for subagents (input includes `agent_type`). `/usage` (alias `/cost`) shows session cost.
+**Loops & hooks.** `/loop 5m <prompt>` repeats on an interval; `/loop <prompt>` self-paces. **Stop hook**: a command in settings.json `hooks.Stop` that runs when Claude tries to finish; exiting with code 2 (stderr = reason) or printing `{"decision":"block","reason":"..."}` sends Claude back to work. Hook commands run in Claude's current directory; use `$CLAUDE_PROJECT_DIR` for project paths. Input JSON includes `stop_hook_active` (true if already continuing because of a stop hook — check it to avoid infinite loops). Claude Code caps consecutive stop-hook continuations at 8 (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`), resetting when Claude calls a tool. `SubagentStop` works the same for subagents (input includes `agent_type`). `/usage` (alias `/cost`) shows session cost.
 
 Stop hook example (settings.json, valid shape):
 ```json
 {
   "hooks": {
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "python scripts/stop_gate.py" } ] }
+      { "hooks": [ { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/scripts/stop_gate.py\"" } ] }
     ]
   }
 }
