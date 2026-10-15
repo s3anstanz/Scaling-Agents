@@ -444,7 +444,7 @@ const next = halted ? `Halted: ${halted}. Fix the cause and rerun; green modules
 log(`${green}/${results.length} modules green. ${next}`)</code></pre></div>
         </li>
         <li><p>Start Claude Code. The planner asks for <code>opus</code> by name; every other agent names its own model.</p>
-          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
+          <div class="cmd"><pre><code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=16 CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
         </li>
         <li><p>Do the small run first. Watch <code>/workflows</code>: three strategy agents, a planner, the first wave (<code>errors</code> and <code>mathutil</code>), sub-lead summaries and the integrator.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/migrate --small</code></pre></div>
@@ -454,7 +454,7 @@ log(`${green}/${results.length} modules green. ${next}`)</code></pre></div>
 sed -n '1,60p' PLAN.md
 git add -A &amp;&amp; git commit -qm "lab 20: small run, plan approved"</code></pre></div>
         </li>
-        <li><p>Run the rest. If the breaker or the budget guard halts it, read the log, fix the cause, and run the same command again; green modules are skipped.</p>
+        <li><p>Run the rest. If the breaker or the budget guard halts it, read the log, fix the cause, and run the same command again. The planner drops modules that already pass, so the final count covers only this run; use <code>python scripts/status.py</code> for the total.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/migrate --plan-approved</code></pre></div>
         </li>
         <li><p>Checkpoint two. Run the gate yourself before you sign off. <code>difftest.py</code> exits 0 when the bytes match, 1 on a mismatch, and 2 if <code>ts/src/cli.ts</code> is not ported yet.</p>

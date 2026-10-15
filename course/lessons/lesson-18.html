@@ -224,7 +224,7 @@ git add -A &amp;&amp; git commit -qm "before lab 18" --allow-empty
 git rm -rq --ignore-unmatch ts/src ts/test &amp;&amp; git checkout fresh -- ts</code></pre></div>
         </li>
         <li><p>Start Claude Code and port waves L0 to L2 (five modules) with the workflow from Lab 16. Run it three times, checking status between runs.</p>
-          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
+          <div class="cmd"><pre><code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=16 CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
         </li>
         <li><p>In another terminal, in <code>kestrel-scale/</code> with <code>source .venv/bin/activate</code> run first, confirm that <code>image</code> is green and checkpoint it.</p>

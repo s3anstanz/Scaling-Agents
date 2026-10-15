@@ -76,7 +76,7 @@
   </figure>
 
   <p>The tree is lopsided, and that is normal. <code>ops/</code> is wide; <code>io/</code> is narrow. In the full library, <code>ops/</code> holds most of the 240 modules. One ops lead with a hundred-plus workers would just recreate the original problem one level down. So <code>ops/</code> gets a third layer: an ops lead with about ten group leads (filters, geometry ops, colour ops, and so on), each with about ten porters. Split wherever a node would otherwise have more children than it can read.</p>
-  <p>There are depth limits to design around. Subagents can spawn subagents up to three layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>). A workflow can call another workflow with <code>workflow()</code>, one level of nesting. A tree for Kestrel-240 fits: the workflow script acts as the root, a sub-lead agent is layer one, a group lead is layer two, and porters are layer three.</p>
+  <p>There are depth limits to design around. Subagents can spawn subagents up to three layers deep by default (<code>CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH</code>). A workflow can call another workflow with <code>workflow()</code>, one level of nesting. A tree for Kestrel-240 fits if the levels below the root are not workflow agents: a lead session can use subagents as sub-lead, group lead and porter, or a workflow can nest one <code>workflow()</code> per package. Workflow agents themselves cannot start subagents.</p>
 
   <div class="c-table-wrap wide">
     <table class="c-table">
@@ -125,7 +125,7 @@
   </div>
 
   <h2><span class="h2num">Part four</span>Building the tree in a workflow</h2>
-  <p>There are two ways to build a tree with the tools you have. The first is <b>model-driven sub-leads</b>. The script calls <code>agent()</code> once per package, and that sub-lead agent uses the Agent tool to start its own porters. The outside is scripted (which packages, in what order) and the inside is model-driven (how to split the package). The second is a <b>nested workflow</b>. A top-level script calls <code>workflow('port-package', ...)</code> for each package, and the inner workflow is fully scripted. That gives you more determinism, at the cost of using your one level of workflow nesting.</p>
+  <p>There are two ways to build a tree with the tools you have. The first is <b>model-driven sub-leads</b>. The script calls <code>agent()</code> once per package, and the sub-lead decides how to handle its package. The outside is scripted (which packages, in what order) and the inside is model-driven. One catch: workflow agents have no Agent tool, so a sub-lead cannot start porters of its own and ports its package itself. The lab shows this. The second is a <b>nested workflow</b>. A top-level script calls <code>workflow('port-package', ...)</code> for each package, and the inner workflow is fully scripted. That gives you more determinism, at the cost of using your one level of workflow nesting.</p>
   <p>The tree and the dependency graph are two different graphs, and you need both. The tree says who reports to whom. The DAG from Lesson 11 says what can run when. <code>ops</code> cannot start until <code>core</code> is green, no matter how the reporting lines are drawn. So the script runs sub-leads in dependency order: <code>core</code>, then <code>ops</code> and <code>io</code> side by side, then <code>analysis</code> and <code>pipeline</code>.</p>
 
   <div class="c-code wide" data-component="code">
@@ -189,7 +189,7 @@
       <div class="cnote cnote--idle is-shown" data-note="idle"><div class="label">Annotations</div><p>Click a marked line to see why it is there.</p></div>
       <div class="cnote" data-note="n1"><div class="label">Line 4 · phases follow the DAG</div><p>Packages still have dependencies. <code>core</code> must finish before <code>ops</code> and <code>io</code>, which must finish before <code>analysis</code> and <code>pipeline</code>. The tree says who reports to whom; the phases say what can run when.</p></div>
       <div class="cnote" data-note="n2"><div class="label">Line 14 · the compression contract</div><p>The schema caps what travels upward. Counts and red modules are structured fields; the prose is limited to five lines.</p></div>
-      <div class="cnote" data-note="n3"><div class="label">Line 22 · model-driven inside</div><p>The sub-lead is one workflow agent that spawns its own porters with the Agent tool. Scripted on the outside, model-driven on the inside. That uses two of the default three subagent layers.</p></div>
+      <div class="cnote" data-note="n3"><div class="label">Line 22 · model-driven inside</div><p>The sub-lead is one workflow agent asked to spawn porters. Workflow agents have no Agent tool, so in practice it ports its package itself, on sonnet. Nested <code>workflow()</code> calls, this lab's stretch, are the way to get real parallel porters per package.</p></div>
       <div class="cnote" data-note="n4"><div class="label">Line 26 · re-verify before reporting</div><p>A sub-lead that repeats its workers' claims is a game of telephone. Counting green from exit codes keeps the summary tied to the repo.</p></div>
       <div class="cnote" data-note="n5"><div class="label">Line 35 · parallel siblings</div><p>Two sub-leads run at once. Their packages share no files, so they cannot collide.</p></div>
       <div class="cnote" data-note="n6"><div class="label">Line 47 · the lead reads summaries only</div><p>The top lead gets five short summaries, not 24 worker reports. At 240 modules that difference is the whole point of the tree.</p></div>
@@ -283,24 +283,25 @@ and the one thing to fix first. Do not open module files.`,
   { label: 'lead roll-up', model: 'opus' })
 log(report ?? 'lead roll-up failed')</code></pre></div>
         </li>
-        <li><p>Start Claude Code. Sub-leads run on <code>sonnet</code> and their porters on <code>haiku</code>, as the script asks; the environment variable covers any subagent that is not given a model.</p>
-          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
+        <li><p>Start Claude Code. Sub-leads run on <code>sonnet</code>. Workflow agents cannot start subagents, so each sub-lead ports its own package on sonnet.</p>
+          <div class="cmd"><pre><code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=16 CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model sonnet</code></pre></div>
         </li>
-        <li><p>Run the tree and open <code>/workflows</code>. You should see one agent per sub-lead in the script's view; their porters run inside them.</p>
+        <li><p>Run the tree and open <code>/workflows</code>. You should see one agent per sub-lead in the script's view; each one does its package's porting itself.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/port-tree</code></pre></div>
         </li>
         <li><p>When it finishes, read the run log. You should find five one-line package tallies and a ten-line status from the lead. That is all the top of the tree saw.</p></li>
-        <li><p>Now drill down. Pick one red module from a summary and ask for the facts. Notice that the answer comes from the repo, not from the summaries.</p>
-          <div class="cmd" data-kind="prompt"><pre><code>The ops sub-lead reported a red module. Run python scripts/status.py --json
-and scripts/verify.sh on it, and show me the first failing assertion and the
-line in the TypeScript port that causes it. Do not fix it.</code></pre></div>
+        <li><p>Now drill down. Pick one red module from a summary (or, if every module is green, any module a summary mentions) and ask for the facts. Notice that the answer comes from the repo, not from the summaries.</p>
+          <div class="cmd" data-kind="prompt"><pre><code>Take a module from the ops sub-lead's summary, a red one if there is one.
+Run python scripts/status.py --json and scripts/verify.sh on it. If it fails,
+show me the first failing assertion and the line in the TypeScript port that
+causes it; if it passes, show me the test count. Do not change any files.</code></pre></div>
         </li>
         <li><p>Record the cost and commit.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/usage</code></pre></div>
           <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 17: tree port"</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>Three dependency phases followed by a roll-up. The <code>ops</code> sub-lead takes longest, because it has 12 modules and the traps cluster there. The lead's status names the red modules and the shared causes without opening any module. If a sub-lead reports that it could not start subagents, it will usually port its package itself, which still works but loses the parallelism; note it and keep going. Expect most of the 24 modules green, with stragglers in <code>ops/</code> or <code>pipeline/</code>.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Three dependency phases followed by a roll-up. The <code>ops</code> sub-lead takes longest, because it has 12 modules and the traps cluster there. The lead's status names the red modules and the shared causes without opening any module. Each sub-lead reports that it could not start subagents and ports its package itself, which works but loses the parallelism. Expect most of the 24 modules green, with stragglers in <code>ops/</code> or <code>pipeline/</code>.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Rebuild the tree with nesting instead. Write <code>port-package.js</code> as a fully scripted workflow (find modules, pipeline port and verify, summarise in five lines), then have a top-level workflow call <code>workflow('port-package', ...)</code> per package in dependency order. Compare determinism and cost with the model-driven version.</p></div>
     </div>
   </div>
