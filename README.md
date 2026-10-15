@@ -42,9 +42,9 @@ python -m pytest -q
 
 The last line should end with `142 passed`. Run `source .venv/bin/activate` again whenever you open a new terminal.
 
-### 4. Open the course and do Lesson 1
+### 4. Start the course
 
-[**Open the course**](https://claude.ai/artifact/MEMDxrrDeJUpgEHdfCJDf5) and read Lesson 1. It ends with Lab 01. Its first step is the setup you just did, so start at step 2.
+[**Open the course**](https://claude.ai/artifact/MEMDxrrDeJUpgEHdfCJDf5) and start with Lesson 1.
 
 ## How the course works
 
