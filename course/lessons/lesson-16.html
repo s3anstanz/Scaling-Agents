@@ -204,10 +204,10 @@
     <table class="c-table">
       <thead><tr><th>Limit</th><th>Default</th><th>What it means for Kestrel</th></tr></thead>
       <tbody>
-        <tr><td>Agents running at once</td><td>16 (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, 1 to 256)</td><td>The 14-module wave fits. A 140-module wave in the full library would run in batches.</td></tr>
+        <tr><td>Agents running at once</td><td>Up to 16 (<code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS</code>, 1 to 256). Smaller machines can start with fewer, so this week's launch commands set it to 16.</td><td>The 14-module wave fits. A 140-module wave in the full library would run in batches.</td></tr>
         <tr><td>Agents per run</td><td>1,000</td><td>Plenty for 24 modules. At 240 modules with verify and retry agents, you start to plan around it.</td></tr>
         <tr><td>Items per <code>parallel</code> or <code>pipeline</code> call</td><td>4,096</td><td>Not a concern for Kestrel.</td></tr>
-        <tr><td>"Large workflow" warning</td><td>Above 25 agents or about 1.5M projected tokens</td><td>The 29-agent L3 run triggers it. That is a prompt to check the plan, not an error.</td></tr>
+        <tr><td>"Large workflow" warning</td><td>Above 25 agents (50 with <code>workflowSizeGuideline: "large"</code>) or about 1.5M projected tokens</td><td>With this week's <code>large</code> setting, Kestrel's runs stay under it. It is a prompt to check the plan, not an error.</td></tr>
         <tr><td><code>workflowSizeGuideline</code></td><td><code>medium</code> (under 10 agents)</td><td>Claude sizes the workflows it writes to this guideline. Options are <code>small</code> (under 5), <code>medium</code>, <code>large</code> (under 50) and <code>unrestricted</code>. For this week, use <code>large</code>.</td></tr>
       </tbody>
     </table>
@@ -241,31 +241,31 @@
     <div class="lab__body">
       <p class="lab__goal"><b>Goal.</b> Have Claude write a workflow that ports the ready wave with one cheap agent per module, watch it in <code>/workflows</code>, save it, and run it until the 14-module wave is done.</p>
       <ol class="lab__steps">
-        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Copy it again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one (or unzip the download again). The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
+        <li><p>Week 4 starts from a fresh copy of the starter, so there is plenty to port. Run this from the folder that contains <code>scaling-agents</code> and <code>kestrel-starter</code>: it copies the starter again from your clone of the course repo into a new folder called <code>kestrel-scale/</code> next to your old one. If you set up from the zip instead, unzip it again somewhere else so it does not overwrite your old <code>kestrel-starter</code>, move the unzipped folder here as <code>kestrel-scale</code>, and start at the <code>cd kestrel-scale</code> line. The copy has no git history of its own, so make the first commit straight away; worktrees and the resets in later labs need it. You need Node.js 22.12 or newer.</p>
           <div class="cmd"><pre><code>git -C scaling-agents pull -q
 cp -R scaling-agents/kestrel-starter ./kestrel-scale
 cd kestrel-scale
-printf '.venv/\nts/node_modules/\n__pycache__/\n.pytest_cache/\n.claude/settings.local.json\n' &gt;&gt; .gitignore
 git init &amp;&amp; git add -A &amp;&amp; git commit -m "Kestrel starter"
-python -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install pytest
+python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install pytest
 cd ts &amp;&amp; npm ci &amp;&amp; cd ..
 python -m pytest -q</code></pre></div>
         </li>
-        <li><p>Bring over the barrel generator you wrote in Lesson 14, so porters never have to touch <code>ts/src/index.ts</code>. Then tag this state <code>fresh</code>; every lab this week resets the port back to it. If you skipped Lesson 14, ask Claude to write <code>scripts/gen_barrel.py</code>, which rewrites <code>ts/src/index.ts</code> with one <code>export * from</code> line per ported module.</p>
+        <li><p>Bring over the barrel generator you wrote in Lesson 14, so porters never have to touch <code>ts/src/index.ts</code>. Then tag this state <code>fresh</code>; every lab this week resets the port back to it. If you skipped Lesson 14, ask Claude to write <code>scripts/gen_barrel.py</code>, which rewrites <code>ts/src/index.ts</code> with one <code>export * from</code> line per ported module, plus an explicit re-export for any name two modules share.</p>
           <div class="cmd"><pre><code>cp ../kestrel-starter/scripts/gen_barrel.py scripts/
 git add -A &amp;&amp; git commit -qm "week 4 setup" &amp;&amp; git tag fresh</code></pre></div>
         </li>
-        <li><p>Tell Claude it may plan workflows of up to 50 agents. Create this file. It holds settings for your machine only, which is why the step above added it to <code>.gitignore</code>.</p>
+        <li><p>Tell Claude it may plan workflows of up to 50 agents. Create this file. It holds settings for your machine only, which is why the starter's <code>.gitignore</code> already lists it.</p>
           <div class="cmd" data-file=".claude/settings.local.json"><pre><code>{
   "workflowSizeGuideline": "large"
 }</code></pre></div>
         </li>
         <li><p>Start Claude Code with a strong lead model and cheap workers. The lead only writes the script; the workers do the porting.</p>
-          <div class="cmd"><pre><code>CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
+          <div class="cmd"><pre><code>CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS=16 CLAUDE_CODE_SUBAGENT_MODEL=haiku claude --model opus</code></pre></div>
         </li>
-        <li><p>Ask for the workflow in plain words.</p>
+        <li><p>Ask for the workflow in plain words. Approve the script when Claude Code asks you to review it.</p>
           <div class="cmd" data-kind="prompt"><pre><code>Use a workflow to port every module in the next ready wave.
-Get the wave from: python scripts/status.py --next
+Inside the workflow, a first haiku agent gets the wave from
+python scripts/status.py --next, so the saved workflow needs no arguments.
 One agent per module, model haiku. Each agent ports the module and its tests
 following MIGRATION.md, edits only that module's files, never edits ts/src/index.ts,
 and is done only when scripts/verify.sh &lt;module&gt; exits 0 (port every Python test
@@ -275,14 +275,14 @@ End with a log of green and red modules and any traps the porters reported,
 then have one agent run python scripts/gen_barrel.py.
 Name it port-wave.</code></pre></div>
         </li>
-        <li><p>While it runs, type <code>/workflows</code>. Find the phases and the agent labels. When it finishes, press <code>s</code> to save it. Then check what landed on disk and how the repo moved.</p>
+        <li><p>While it runs, type <code>/workflows</code>. Find the phases and the agent labels. When it finishes, press <code>s</code> to save it. Then check what landed on disk and how the repo moved. Open the saved script: if it reads the wave from <code>args</code> instead of a finder agent, replace it with the reference version in step 8 before going on.</p>
           <div class="cmd"><pre><code>ls .claude/workflows/
 python scripts/status.py</code></pre></div>
         </li>
-        <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one and expect the "Large workflow" warning.</p>
+        <li><p>The first wave is only <code>errors</code> and <code>mathutil</code>. Run the saved workflow three more times to port L1 (<code>color</code>, <code>geometry</code>), L2 (<code>image</code>) and then L3, the 14-module wave. Watch <code>/workflows</code> during the last one.</p>
           <div class="cmd" data-kind="prompt"><pre><code>/port-wave</code></pre></div>
         </li>
-        <li><p>Compare Claude's saved script with the reference version below. If yours is missing an independent verify, a schema, or the null filter, replace it with this one and rerun <code>/port-wave</code>; green modules come back green again, so nothing is lost.</p>
+        <li><p>Compare Claude's saved script with the reference version below. If yours takes the wave from <code>args</code> instead of a finder agent, or is missing an independent verify, a schema, or the null filter, replace it with this one. Do not rerun it now: <code>--next</code> would start wave L4. Lab 18 uses it from a reset.</p>
           <div class="cmd" data-file=".claude/workflows/port-wave.js"><pre><code>export const meta = {
   name: 'port-wave',
   description: 'Port every module in the next ready wave, one agent per module, each checked by scripts/verify.sh',
@@ -351,7 +351,7 @@ await agent('Run python scripts/gen_barrel.py to regenerate ts/src/index.ts, the
           <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "lab 16: waves L0-L3 via port-wave"</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>Four runs with the same shape: one finder, then a port and a verify per module. The fourth run starts 14 porters at once, all within the 16-agent default. A few ops usually come back red on the first pass. <code>blur</code> trips T1 rounding, <code>pad</code> trips T3 modulo, and <code>resize</code> or <code>rotate</code> may trip T2 floor division if <code>mathutil</code>'s port hid it. The report lists those traps for you to add to <code>MIGRATION.md</code>. Exact counts and cost vary by run.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Four runs with the same shape: one finder, then a port and a verify per module. The fourth run starts 14 porters at once, all within the cap of 16 you set at launch. A few ops usually come back red on the first pass. <code>blur</code> trips T1 rounding, <code>pad</code> trips T3 modulo, and <code>resize</code> or <code>rotate</code> may trip T2 floor division if <code>mathutil</code>'s port hid it. The report lists those traps for you to add to <code>MIGRATION.md</code>. Exact counts and cost vary by run.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Edit the saved script so a red module gets one retry on <code>sonnet</code>, with the verify error pasted into its prompt, before it is reported red. Rerun on a fresh reset and compare the green count and <code>/usage</code>.</p></div>
     </div>
   </div>

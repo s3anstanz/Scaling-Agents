@@ -241,7 +241,7 @@ R1 Tests: run scripts/verify.sh kestrel/&lt;path&gt;.py. Pass only on exit 0.
 R2 Coverage: every test function in the Python test file has a matching TS test in ts/test/&lt;path&gt;.test.ts with the same inputs and expected values. Give both counts.
 R3 Traps: for every entry in MIGRATION.md Known traps, check the TS code. Flag Math.round where Python used round(), Math.trunc or plain / where Python used //, a bare % whose left side can be negative, .sort() on numbers without a comparator, and header parsing that ignores # comments or irregular whitespace.
 R4 Contract: names and types follow MIGRATION.md; helpers are imported from already-ported modules, not copied.
-R5 Barrel: ts/src/index.ts has exactly one export line for the module.
+R5 Barrel: ts/src/index.ts has exactly one export line for the module, plus an explicit re-export where two modules export the same name.
 
 Reply in exactly this shape:
 VERDICT: PASS or FAIL
@@ -264,8 +264,8 @@ If the reviewer returns FAIL for a module, send its FINDINGS verbatim to a new p
 Finally, append any new trap the porters or the reviewer reported to the Known traps section of MIGRATION.md (you are the only one who edits that file), and run python scripts/status.py.</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>The planner replies with SCOPE, PACKAGES, TRAPS, ORDER, VERIFY and RISKS, and probably flags header parsing in <code>ppm.py</code>. Two porter calls run in parallel and each returns the 6-line report. <code>io/ppm</code> is where trap T5 lives: PPM headers may contain <code>#</code> comments and irregular whitespace. A naive split on spaces fails the Python-derived tests; if the porter misses part of it, the reviewer's R3 should catch it. You end with <code>io/ppm</code> and <code>io/pgm</code> passing, a T5 entry in <code>MIGRATION.md</code> written by the lead, and three agent files that Week 3 builds on.</p></div>
-      <div class="lab__stretch"><div class="label">Stretch</div><p>Run <code>claude --agent reviewer</code> and ask it to review <code>kestrel/ops/blur.py</code> from Week 1. A whole session in the reviewer role sees your port with fresh eyes. Then ask it to "just fix" a finding and watch the tool allowlist stop it.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>The planner replies with SCOPE, PACKAGES, TRAPS, ORDER, VERIFY and RISKS, and probably flags header parsing in <code>ppm.py</code>. Two porter calls run in parallel and each returns the 6-line report. <code>io/ppm</code> is where trap T5 lives: PPM headers may contain <code>#</code> comments and irregular whitespace. A naive split on spaces fails the Python-derived tests; if the porter misses part of it, the reviewer's R3 should catch it. You end with <code>io/ppm</code> and <code>io/pgm</code> passing, a Known traps entry for header parsing (the course's T5) written by the lead, if a porter or the reviewer reported it, and three agent files that Week 3 builds on.</p></div>
+      <div class="lab__stretch"><div class="label">Stretch</div><p>Run <code>claude --agent reviewer</code> and ask it to review <code>kestrel/ops/blur.py</code> from Week 1. A whole session in the reviewer role sees your port with fresh eyes. Then ask it to "just fix" a finding (if blur passes, ask it to add a comment line to <code>ts/src/ops/blur.ts</code>) and watch what stops it: it has no Edit or Write tool, and its role prompt makes it refuse. If it did try Bash, a permission prompt would stop it.</p></div>
     </div>
   </div>
 

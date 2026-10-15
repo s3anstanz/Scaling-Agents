@@ -165,7 +165,7 @@ for m in threshold resize rotate brightness; do
     --output-format json --json-schema "$SCHEMA" \
     --max-turns 25 --max-budget-usd 0.75 \
     --permission-mode acceptEdits \
-    --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(npx vitest*),Bash(python -m pytest*)" \
+    --allowedTools "Read,Edit,Write,Glob,Grep,Bash(scripts/*),Bash(./scripts/*),Bash(python scripts/*),Bash(python -m pytest*),Bash(npx vitest*)" \
     &lt; /dev/null &gt; results/$m.json &amp;
 done
 wait
@@ -186,10 +186,10 @@ EOF</code></pre></div>
         </li>
         <li><p>Open Claude Code in the copy and reconcile. The orchestrator is the single writer for <code>MIGRATION.md</code>.</p>
           <div class="cmd"><pre><code>claude --model opus</code></pre></div>
-          <div class="cmd" data-kind="prompt"><pre><code>Reconcile the parallel run. Read every results/*.json (the claim is in structured_output). Run `python scripts/status.py --json` and scripts/verify.sh for each of the four modules. Show me a table: module, claimed status, claimed tests_passed, actual verify result, turns, cost, traps claimed. Flag every row where claim and repo disagree and explain the likely cause. Check ts/src/index.ts for missing or duplicated export lines. Then, as the only writer of MIGRATION.md, append any trap that is genuinely new (deduplicate against T1 to T5 and against each other). Do not fix any module yet.</code></pre></div>
+          <div class="cmd" data-kind="prompt"><pre><code>Reconcile the parallel run. Read every results/*.json (the claim is in structured_output). Run `python scripts/status.py --json` and scripts/verify.sh for each of the four modules. Show me a table: module, claimed status, claimed tests_passed, actual verify result, turns, cost, traps claimed. Flag every row where claim and repo disagree and explain the likely cause. Check ts/src/index.ts for missing or duplicated export lines. Then, as the only writer of MIGRATION.md, append any trap that is genuinely new (deduplicate against the Known traps already listed and against each other). Do not fix any module yet.</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>Four files in <code>results/</code>, each with a <code>structured_output</code> that matches the schema, and real numbers for turns and cost. <code>resize</code> and <code>rotate</code> probably report T2 in <code>traps_found</code>, which the reconcile step should recognise as already known. On some runs the claims and <code>status.py</code> agree completely. On others you find a missing or doubled line in <code>index.ts</code>, or a module that claimed success but fails now. Either outcome teaches the lesson: you only know because you measured. If Haiku failed a module that Sonnet handled in Lesson 7, rerun just that one with <code>--model sonnet</code>.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>Four files in <code>results/</code>, each with a <code>structured_output</code> that matches the schema, and real numbers for turns and cost. <code>resize</code> and <code>rotate</code> probably report T2 in <code>traps_found</code>, which the reconcile step should recognise as already known. On some runs the claims and <code>status.py</code> agree completely. On others you find a missing or doubled line in <code>index.ts</code>, or a module that claimed success but fails now. Either outcome teaches the lesson: you only know because you measured. If Haiku failed a module that Sonnet handled in Week 2, rerun just that one with <code>--model sonnet</code>.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Rerun the four jobs with <code>xargs -P 4</code> instead of a loop with <code>&amp;</code>, and give each run its own retry: if <code>structured_output.status</code> is <code>failed</code>, rerun that module once with <code>--model sonnet</code>. Note what the retry cost compared with the first attempt. You will build this retry into a workflow in Week 4.</p></div>
     </div>
   </div>

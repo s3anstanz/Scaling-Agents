@@ -6,7 +6,8 @@
       "Bash(scripts/*)",
       "Bash(python scripts/*)",
       "Bash(npm test*)",
-      "Bash(npm install*)"
+      "Bash(npm install*)",
+      "Bash(npm --prefix ts run typecheck*)"
     ]
   }
 }
