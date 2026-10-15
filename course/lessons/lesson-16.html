@@ -250,7 +250,7 @@ python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip instal
 cd ts &amp;&amp; npm ci &amp;&amp; cd ..
 python -m pytest -q</code></pre></div>
         </li>
-        <li><p>Bring over the barrel generator you wrote in Lesson 14, so porters never have to touch <code>ts/src/index.ts</code>. Then tag this state <code>fresh</code>; every lab this week resets the port back to it. If you skipped Lesson 14, ask Claude to write <code>scripts/gen_barrel.py</code>, which rewrites <code>ts/src/index.ts</code> with one <code>export * from</code> line per ported module.</p>
+        <li><p>Bring over the barrel generator you wrote in Lesson 14, so porters never have to touch <code>ts/src/index.ts</code>. Then tag this state <code>fresh</code>; every lab this week resets the port back to it. If you skipped Lesson 14, ask Claude to write <code>scripts/gen_barrel.py</code>, which rewrites <code>ts/src/index.ts</code> with one <code>export * from</code> line per ported module, plus an explicit re-export for any name two modules share.</p>
           <div class="cmd"><pre><code>cp ../kestrel-starter/scripts/gen_barrel.py scripts/
 git add -A &amp;&amp; git commit -qm "week 4 setup" &amp;&amp; git tag fresh</code></pre></div>
         </li>

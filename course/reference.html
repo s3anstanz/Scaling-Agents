@@ -68,7 +68,7 @@ FAIL with the exact failing cases and any trap from MIGRATION.md the port missed
   <div class="cmd wide" data-file=".claude/settings.local.json"><pre><code>{
   "hooks": {
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "python scripts/stop_gate.py" } ] }
+      { "hooks": [ { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/scripts/stop_gate.py\"" } ] }
     ]
   }
 }</code></pre></div>

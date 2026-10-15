@@ -180,7 +180,7 @@
           <div class="cmd"><pre><code>source .venv/bin/activate
 python scripts/status.py --next</code></pre></div>
         </li>
-        <li><p>Start a session with teams enabled. The variable applies only to this launch.</p>
+        <li><p>Start a session with teams enabled. The variable applies only to this launch. If Claude says it has no team tools, or offers to imitate a team with background subagents, stop it: teams are not available to you yet, so use the fallback under What you should see.</p>
           <div class="cmd"><pre><code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --model opus</code></pre></div>
         </li>
         <li><p>Ask the lead for the team. The single-writer rule from Lesson 12 still holds: only the lead touches the barrel and <code>MIGRATION.md</code>.</p>

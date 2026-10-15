@@ -12,7 +12,7 @@ The Python code and its tests are the specification. The TypeScript port must be
 
 Examples: `kestrel/core/color.py` → `ts/src/core/color.ts`, tested by `ts/test/core/color.test.ts`. Imports between ported modules are relative and extensionless: `import { roundHalfEven } from "./mathutil";`, and from a test `import { toGray } from "../../src/core/color";`.
 
-`ts/src/index.ts` is the barrel. Each ported module adds one line: `export * from "./core/color";`. When two modules export the same name (`invert` in `core/color` and `ops/invert`; `readTokens`, `toInt`, `WHITESPACE` and `COMMENT` in `io/ppm` and `io/pgm`), add an explicit re-export after the `export *` lines, such as `export { invert } from "./ops/invert";`. A script that generates the barrel must write these lines too. Check the barrel from the repo root with `npm --prefix ts run typecheck`; `scripts/verify.sh` runs the tests but does not type-check it.
+`ts/src/index.ts` is the barrel. Each ported module adds one line: `export * from "./core/color";`. When two modules export the same name (`invert` in `core/color` and `ops/invert`; `readTokens`, `toInt`, `WHITESPACE` and `COMMENT` in `io/ppm` and `io/pgm`), add an explicit re-export after the `export *` lines, such as `export { invert } from "./core/color";`. A script that generates the barrel must write these lines too. Check the barrel from the repo root with `npm --prefix ts run typecheck`; `scripts/verify.sh` runs the tests but does not type-check it.
 
 ## Public API
 

@@ -25,7 +25,7 @@
   <ul>
     <li><code>claude --worktree &lt;name&gt;</code> (or <code>-w</code>) starts a whole session in <code>.claude/worktrees/&lt;name&gt;/</code> on a branch called <code>worktree-&lt;name&gt;</code>.</li>
     <li><code>isolation: worktree</code> in a subagent's frontmatter gives each run of that subagent its own temporary worktree. If the subagent made no changes, the worktree is removed when it finishes.</li>
-    <li>A <code>.worktreeinclude</code> file lists git-ignored files to copy into new worktrees. Kestrel needs it for <code>ts/node_modules</code>, which git ignores and vitest needs.</li>
+    <li>A <code>.worktreeinclude</code> file lists git-ignored files to copy into new worktrees. Kestrel needs it for <code>ts/node_modules</code>, which git ignores and vitest needs. Symlinks are not copied, so <code>node_modules/.bin</code> is missing until <code>npm rebuild</code> runs.</li>
   </ul>
   <p>With isolation, porter A's test run sees only A's edits. The quiet collision from Part one cannot happen, because B's half-finished file is in another folder.</p>
   <p>Isolation does not remove conflicts, though. It moves them. Concurrent collisions become <b>merge conflicts</b> that appear at one known moment, when you merge the branches back. That is a real improvement, since a merge conflict is visible and stops the process, while a lost update is silent. It still leaves you with something to resolve.</p>
@@ -98,7 +98,7 @@
     <table class="c-table">
       <thead><tr><th>Strategy</th><th>How it works</th><th>Kestrel example</th><th>Trade-off</th></tr></thead>
       <tbody>
-        <tr><td>Regenerate from the source of truth</td><td>A script rebuilds the file from what exists in the repo</td><td><code>scripts/gen_barrel.py</code> writes one export line per file in <code>ts/src/</code></td><td>Deterministic and free; only works when the file can be derived</td></tr>
+        <tr><td>Regenerate from the source of truth</td><td>A script rebuilds the file from what exists in the repo</td><td><code>scripts/gen_barrel.py</code> writes one export line per file in <code>ts/src/</code>, plus a re-export for each name two files share</td><td>Deterministic and free; only works when the file can be derived</td></tr>
         <tr><td>One file per writer</td><td>Each writer appends to its own file; a reader combines them</td><td><code>results/&lt;module&gt;.json</code> from Lesson 12</td><td>No conflicts possible; someone must combine</td></tr>
         <tr><td>Integrator agent</td><td>One agent merges branches in order and resolves conflicts with full view</td><td>An integrator merges 14 porter branches and fixes clashes in shared helpers</td><td>Handles anything; serial, costs tokens, and its judgment can be wrong</td></tr>
       </tbody>
@@ -180,14 +180,14 @@ printf 'ts/node_modules/\n__pycache__/\n.pytest_cache/\n' &gt;&gt; .gitignore
 printf 'ts/node_modules/\n' &gt; .worktreeinclude
 rm -f .claude/settings.local.json</code></pre></div>
         </li>
-        <li><p>Open <code>.claude/agents/porter.md</code> in the copy and add <code>isolation: worktree</code> to its frontmatter. Then remove four ops and commit a starting point you can return to.</p>
+        <li><p>Open <code>.claude/agents/porter.md</code> in the copy and add <code>isolation: worktree</code> to its frontmatter. Worktrees get <code>ts/node_modules</code> without its <code>.bin</code> links, so also add a first step to its body: <code>Run npm rebuild --offline --prefix ts once.</code> Then remove four ops and commit a starting point you can return to.</p>
           <div class="cmd"><pre><code>for m in invert flip contrast brightness; do
   rm -f ts/src/ops/$m.ts ts/test/ops/$m.test.ts
   grep -v "/ops/$m\"" ts/src/index.ts &gt; ts/src/index.tmp &amp;&amp; mv ts/src/index.tmp ts/src/index.ts
 done
 git init -q &amp;&amp; git add -A &amp;&amp; git commit -qm "lab 14 start" &amp;&amp; git tag lab14-start</code></pre></div>
         </li>
-        <li><p>Part A, the naive design. Start a session and send the porters out. Approve the <code>git</code> commands when asked, or add <code>Bash(git *)</code> to the allow list in the copy's settings.</p>
+        <li><p>Part A, the naive design. Start a session and send the porters out. Approve the <code>git</code> commands when asked, or add <code>Bash(git *)</code> and <code>Bash(npm rebuild*)</code> to the allow list in the copy's settings.</p>
           <div class="cmd"><pre><code>claude --model opus</code></pre></div>
           <div class="cmd" data-kind="prompt"><pre><code>Use four porter agents in parallel, one each for kestrel/ops/invert.py, kestrel/ops/flip.py, kestrel/ops/contrast.py and kestrel/ops/brightness.py. Each porter appends its module's export line to ts/src/index.ts as usual, and when scripts/verify.sh passes it commits everything it changed on its worktree branch. When all four are done, run `git branch` and merge the four branches into the current branch one at a time with `git merge --no-edit`. Stop at the first merge conflict, show me the conflicting hunk, and do not resolve it.</code></pre></div>
         </li>
@@ -197,16 +197,22 @@ git reset --hard lab14-start
 git worktree list</code></pre></div>
         </li>
         <li><p>Part B, the fixed design. Create the barrel generator.</p>
-          <div class="cmd" data-file="scripts/gen_barrel.py"><pre><code>from pathlib import Path
+          <div class="cmd" data-file="scripts/gen_barrel.py"><pre><code>import re
+from collections import defaultdict
+from pathlib import Path
 
 src = Path("ts/src")
-lines = [
-    f'export * from "./{p.relative_to(src).with_suffix("").as_posix()}";'
-    for p in sorted(src.rglob("*.ts"))
-    if p.name != "index.ts"
-]
+mods = [p.relative_to(src).with_suffix("").as_posix()
+        for p in sorted(src.rglob("*.ts")) if p.name != "index.ts"]
+owners = defaultdict(list)
+for m in mods:
+    text = (src / f"{m}.ts").read_text()
+    for name in re.findall(r"^export (?:async )?(?:function\*?|const|let|class|type|interface|enum) (\w+)", text, re.M):
+        owners[name].append(m)
+lines = [f'export * from "./{m}";' for m in mods]
+lines += [f'export {{ {n} }} from "./{ms[0]}";' for n, ms in sorted(owners.items()) if len(ms) &gt; 1]
 (src / "index.ts").write_text("\n".join(lines) + "\n")
-print(f"{len(lines)} exports written to ts/src/index.ts")</code></pre></div>
+print(f"{len(mods)} exports written to ts/src/index.ts")</code></pre></div>
         </li>
         <li><p>Edit the body of <code>porter.md</code>: delete the instruction to append an export line to <code>ts/src/index.ts</code>, and add lines 10 to 18 of the annotated file above, keeping your report format. Commit both changes, then run the same four ports with an integrator at the end.</p>
           <div class="cmd"><pre><code>git add -A &amp;&amp; git commit -qm "ownership rules and barrel generator"
@@ -215,10 +221,10 @@ claude --model opus</code></pre></div>
         </li>
         <li><p>Carry the fix home. Copy the generator into your real repo and in its <code>porter.md</code> replace the barrel instruction with lines 11 to 16 of the annotated file. Week 4 runs many more porters and depends on both.</p>
           <div class="cmd"><pre><code>cp scripts/gen_barrel.py ../kestrel-starter/scripts/
-cd ../kestrel-starter &amp;&amp; python scripts/gen_barrel.py &amp;&amp; (cd ts &amp;&amp; npx vitest run)</code></pre></div>
+cd ../kestrel-starter &amp;&amp; python scripts/gen_barrel.py &amp;&amp; npm --prefix ts run typecheck &amp;&amp; (cd ts &amp;&amp; npx vitest run)</code></pre></div>
         </li>
       </ol>
-      <div class="lab__expect"><div class="label">What you should see</div><p>In Part A, four worktrees appear under <code>.claude/worktrees/</code>, all four porters pass, the first merge succeeds, and the second stops on <code>ts/src/index.ts</code> with two different export lines in one conflict hunk. In Part B, all four merges are clean, the generator reports one export per TypeScript file, and the full vitest run and <code>status.py</code> both pass. In your real repo the regenerated barrel may list exports in a new order; the tests should still pass.</p></div>
+      <div class="lab__expect"><div class="label">What you should see</div><p>In Part A, four worktrees appear under <code>.claude/worktrees/</code>, all four porters pass, the first merge succeeds, and a later one stops on <code>ts/src/index.ts</code> with two different export lines in one conflict hunk. Porters that append conflict on the second merge; porters that keep the barrel sorted conflict only where two lines land in the same place, such as <code>brightness</code> and <code>contrast</code>. In Part B, all four merges are clean, the generator reports one export per TypeScript file, and the type check, the full vitest run and <code>status.py</code> all pass. In your real repo the regenerated barrel may list exports in a new order; the tests should still pass.</p></div>
       <div class="lab__stretch"><div class="label">Stretch</div><p>Make a porter break the rules on purpose: tell one of the four to also "tidy up" <code>ts/src/core/color.ts</code>. Then write a check the integrator runs before merging, using <code>git diff --name-only lab14-start..&lt;branch&gt;</code>, that rejects any branch touching a file outside its module. Ownership you can check beats ownership you only ask for.</p></div>
     </div>
   </div>
