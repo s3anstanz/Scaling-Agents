@@ -12,7 +12,7 @@ The Python code and its tests are the specification. The TypeScript port must be
 
 Examples: `kestrel/core/color.py` → `ts/src/core/color.ts`, tested by `ts/test/core/color.test.ts`. Imports between ported modules are relative and extensionless: `import { roundHalfEven } from "./mathutil";`, and from a test `import { toGray } from "../../src/core/color";`.
 
-`ts/src/index.ts` is the barrel. Each ported module adds one line: `export * from "./core/color";`.
+`ts/src/index.ts` is the barrel. Each ported module adds one line: `export * from "./core/color";`. When two modules export the same name (`invert` in `core/color` and `ops/invert`; the header helpers in `io/ppm` and `io/pgm`), add an explicit re-export after the `export *` lines and check it from the repo root with `npm --prefix ts run typecheck`; `scripts/verify.sh` runs the tests but does not type-check the barrel.
 
 ## Public API
 
@@ -42,7 +42,7 @@ Examples: `kestrel/core/color.py` → `ts/src/core/color.ts`, tested by `ts/test
 - Each `def test_x():` becomes `it("test_x", ...)` with the Python function name verbatim as the title, inside a `describe("<path>", ...)` block. `scripts/verify.sh` checks that every Python test name appears.
 - `assert a == b` → `expect(a).toEqual(b)` for arrays, tuples and objects, `toBe` for numbers, strings and booleans.
 - `pytest.raises(E)` → `expect(() => ...).toThrow(E)`.
-- Paths to `samples/` are resolved from the test file: `fileURLToPath(new URL("../../samples/tiny.ppm", import.meta.url))`.
+- Paths to `samples/` are resolved from the test file. From `ts/test/<dir>/` that is `fileURLToPath(new URL("../../../samples/tiny.ppm", import.meta.url))`; from a test directly in `ts/test/` it is `"../../samples/..."`.
 
 ## Command line
 
