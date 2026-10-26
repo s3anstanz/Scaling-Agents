@@ -1,5 +1,9 @@
 """Build the single-page course into dist/scaling-agents.html.
 
+dist/index.html is the same page as a standalone document for GitHub Pages:
+claude.ai supplies the doctype, charset and viewport for the artifact, so the
+standalone copy adds them itself.
+
 The page embeds a zip of ../kestrel-starter so the download button and the
 repo always ship the same starter.
 """
@@ -12,6 +16,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 STARTER = HERE.parent / "kestrel-starter"
 SKIP_DIRS = {"node_modules", ".venv", "__pycache__", ".pytest_cache", ".git"}
+STANDALONE_HEAD = (
+    '<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+)
 
 
 def starter_zip() -> bytes:
@@ -52,6 +60,7 @@ def build() -> Path:
     out = HERE / "dist" / "scaling-agents.html"
     out.parent.mkdir(exist_ok=True)
     out.write_text(page)
+    (out.parent / "index.html").write_text(STANDALONE_HEAD + page)
     return out
 
 

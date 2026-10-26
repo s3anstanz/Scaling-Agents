@@ -70,6 +70,15 @@ else {
   }
 }
 
+const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+const standalone = await phone.newPage();
+standalone.on("pageerror", (e) => fail(`standalone: script error: ${e.message}`));
+await standalone.goto(`${new URL("../dist/index.html", import.meta.url).href}#lesson-01`);
+const m = await standalone.evaluate(() => ({ mode: document.compatMode, width: window.innerWidth, overflow: document.documentElement.scrollWidth - window.innerWidth }));
+if (m.mode !== "CSS1Compat") fail(`standalone: renders in quirks mode (${m.mode})`);
+if (m.width !== 390) fail(`standalone on a phone: layout is ${m.width}px wide, not 390`);
+if (m.overflow > 1) fail(`standalone on a phone: page scrolls sideways by ${m.overflow}px`);
+
 await browser.close();
 if (failures.length) {
   console.error(failures.map((f) => `FAIL ${f}`).join("\n"));
