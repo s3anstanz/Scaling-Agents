@@ -59,6 +59,17 @@ const zipText = await page.locator("#starter-zip").textContent();
 const zip = Buffer.from(zipText.replace(/\s+/g, ""), "base64");
 if (zip.subarray(0, 4).toString("hex") !== "504b0304") fail("starter zip: embedded data is not a zip archive");
 
+const dlButton = page.locator("#dl-btn");
+if (await dlButton.isDisabled()) fail("download: button is disabled outside claude.ai");
+else {
+  try {
+    const [download] = await Promise.all([page.waitForEvent("download", { timeout: 5000 }), dlButton.click()]);
+    if (download.suggestedFilename() !== "kestrel-starter.zip") fail(`download: saved as ${download.suggestedFilename()}`);
+  } catch (e) {
+    fail(`download: no file was saved (${e.message.split("\n")[0]})`);
+  }
+}
+
 await browser.close();
 if (failures.length) {
   console.error(failures.map((f) => `FAIL ${f}`).join("\n"));

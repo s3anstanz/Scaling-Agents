@@ -353,19 +353,23 @@
   });
 
   var dlBtn = document.getElementById("dl-btn"), dlStatus = document.getElementById("dl-status");
+  var DL_READY = "kestrel-starter.zip · a git repo with Python source, tests, scripts and an empty TypeScript target.";
+  function starterBlob(){
+    var b64 = document.getElementById("starter-zip").textContent.replace(/\s+/g, "");
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+    return new Blob([bytes], {type: "application/zip"});
+  }
   if (dlBtn && window.claude && typeof window.claude.use === "function") {
     window.claude.use("downloads").then(function(dl){
-      if (!dl) { dlStatus.textContent = "Downloading isn't available in this view. Open the course in claude.ai to get the zip."; dlBtn.disabled = true; return; }
+      if (!dl) { dlStatus.textContent = "Downloading isn't available in this view. Clone the repo with the commands above instead."; dlBtn.disabled = true; return; }
       dlBtn.disabled = false;
-      dlStatus.textContent = "kestrel-starter.zip · a git repo with Python source, tests, scripts and an empty TypeScript target.";
+      dlStatus.textContent = DL_READY;
       dlBtn.addEventListener("click", function(){
         dlBtn.disabled = true;
         dlStatus.textContent = "Preparing the zip…";
         Promise.resolve().then(function(){
-            var b64 = document.getElementById("starter-zip").textContent.replace(/\s+/g, "");
-            var bin = atob(b64), bytes = new Uint8Array(bin.length);
-            for (var k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
-            return dl.save({filename: "kestrel-starter.zip", data: new Blob([bytes])});
+            return dl.save({filename: "kestrel-starter.zip", data: starterBlob()});
           })
           .then(function(){ dlStatus.textContent = "Saved. Unzip it and follow Lab 01."; })
           .catch(function(e){
@@ -378,8 +382,18 @@
       });
     });
   } else if (dlBtn) {
-    dlBtn.disabled = true;
-    dlStatus.textContent = "Downloading isn't available in this view. Open the course in claude.ai to get the zip.";
+    dlBtn.disabled = false;
+    dlStatus.textContent = DL_READY;
+    dlBtn.addEventListener("click", function(){
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(starterBlob());
+      a.download = "kestrel-starter.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      dlStatus.textContent = "Downloading. Unzip it and follow Lab 01.";
+    });
   }
 
   buildNav();

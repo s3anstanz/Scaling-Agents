@@ -2,8 +2,6 @@
 
 Learn to build teams of AI agents in Claude Code by doing it. Across 20 short lessons you use Claude Code to port a small, made-up Python library called Kestrel to TypeScript: first with one agent, then a team of 3 to 5, then 10 to 25, and finally a design for 100.
 
-> This repo and the course page are private. If a link below doesn't open, ask the owner to share it with you.
-
 ## Start in 4 steps
 
 Commands are for macOS or Linux.
@@ -44,7 +42,7 @@ The last line should end with `142 passed`. Run `source .venv/bin/activate` agai
 
 ### 4. Start the course
 
-[**Open the course**](https://claude.ai/artifact/MEMDxrrDeJUpgEHdfCJDf5) and start with Lesson 1.
+[**Open the course**](https://s3anstanz.github.io/scaling-agents/) and start with Lesson 1.
 
 ## How the course works
 
