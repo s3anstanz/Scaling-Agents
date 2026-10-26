@@ -18,6 +18,9 @@
   var labsDone = store.get("labs") || {};
 
   function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function title(sec){
+    return sec.getAttribute("data-title").replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; });
+  }
   function lessonNum(sec){ return parseInt(sec.id.replace("lesson-", ""), 10); }
   function lessonDone(sec){ var lab = sec.querySelector("[data-lab-id]"); return !!(lab && labsDone[lab.getAttribute("data-lab-id")]); }
 
@@ -28,7 +31,7 @@
       html += '<div class="wk"><div class="wk__head"><span class="n">Week ' + w + '</span><span class="t">' + WEEKS[w].name + '</span></div><ul class="wk__list">';
       lessons.filter(function(s){ return s.getAttribute("data-week") === w; }).forEach(function(s){
         var n = lessonNum(s);
-        html += '<li><a class="navitem' + (lessonDone(s) ? " is-done" : "") + '" href="#' + s.id + '" data-target="' + s.id + '"><span class="num">' + pad(n) + '</span><span class="t">' + s.getAttribute("data-title") + '</span><span class="tick" aria-hidden="true">' + CHECK + '</span></a></li>';
+        html += '<li><a class="navitem' + (lessonDone(s) ? " is-done" : "") + '" href="#' + s.id + '" data-target="' + s.id + '"><span class="num">' + pad(n) + '</span><span class="t">' + title(s) + '</span><span class="tick" aria-hidden="true">' + CHECK + '</span></a></li>';
       });
       html += '</ul></div>';
     });
@@ -42,7 +45,7 @@
     ["1","2","3","4"].forEach(function(w){
       html += '<div class="rm-col"><div class="rm-col__head"><span class="n">Week ' + w + '</span><span class="t">' + WEEKS[w].name + '</span><span class="s">' + WEEKS[w].scale + '</span></div>';
       lessons.filter(function(s){ return s.getAttribute("data-week") === w; }).forEach(function(s){
-        html += '<a class="rm-item' + (lessonDone(s) ? " is-done" : "") + '" href="#' + s.id + '"><span class="num">' + pad(lessonNum(s)) + '</span><span class="t">' + s.getAttribute("data-title") + '</span></a>';
+        html += '<a class="rm-item' + (lessonDone(s) ? " is-done" : "") + '" href="#' + s.id + '"><span class="num">' + pad(lessonNum(s)) + '</span><span class="t">' + title(s) + '</span></a>';
       });
       html += '</div>';
     });
@@ -54,8 +57,8 @@
       var div = document.createElement("div");
       div.className = "pager";
       var h = "";
-      h += prev ? '<a class="prev" href="#' + prev.id + '"><span>Previous · ' + pad(lessonNum(prev)) + '</span>' + prev.getAttribute("data-title") + '</a>' : '<a class="prev" href="#home"><span>Back</span>Course home</a>';
-      h += next ? '<a class="next" href="#' + next.id + '"><span>Next · ' + pad(lessonNum(next)) + '</span>' + next.getAttribute("data-title") + '</a>' : '<a class="next" href="#reference"><span>After the course</span>Reference sheet</a>';
+      h += prev ? '<a class="prev" href="#' + prev.id + '"><span>Previous · ' + pad(lessonNum(prev)) + '</span>' + title(prev) + '</a>' : '<a class="prev" href="#home"><span>Back</span>Course home</a>';
+      h += next ? '<a class="next" href="#' + next.id + '"><span>Next · ' + pad(lessonNum(next)) + '</span>' + title(next) + '</a>' : '<a class="next" href="#reference"><span>After the course</span>Reference sheet</a>';
       div.innerHTML = h;
       s.appendChild(div);
     });
