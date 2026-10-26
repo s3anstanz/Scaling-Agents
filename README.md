@@ -42,7 +42,7 @@ The last line should end with `142 passed`. Run `source .venv/bin/activate` agai
 
 ### 4. Start the course
 
-[**Open the course**](https://s3anstanz.github.io/scaling-agents/) and start with Lesson 1.
+[**Open the course**](https://s3anstanz.github.io/Scaling-Agents/) and start with Lesson 1.
 
 ## How the course works
 

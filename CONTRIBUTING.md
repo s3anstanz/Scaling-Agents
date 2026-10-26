@@ -21,6 +21,6 @@ cd ../kestrel-starter && python -m pytest -q
 cd ts && npm ci && cd ../.. && ci/check_traps.sh
 ```
 
-Lessons follow the contract in [`course/AUTHORING.md`](course/AUTHORING.md). Merging to `main` publishes the page: the Pages workflow builds `course/dist/scaling-agents.html` and serves it at https://s3anstanz.github.io/scaling-agents/.
+Lessons follow the contract in [`course/AUTHORING.md`](course/AUTHORING.md). Merging to `main` publishes the page: the Pages workflow builds `course/dist/scaling-agents.html` and serves it at https://s3anstanz.github.io/Scaling-Agents/.
 
 `main` is protected: open a pull request from a branch. It merges once the required check, **All checks pass**, is green and every review thread is resolved.
