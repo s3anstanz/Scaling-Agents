@@ -54,6 +54,9 @@ const after = await sim.locator('[data-o="time"]').textContent();
 if (before === after) fail("simulator: moving the slider did not change wall-clock");
 if ((await sim.locator("output").textContent()) !== "1") fail("simulator: slider at 0 should read 1 agent");
 
+const navTitles = await page.evaluate(() => [...document.querySelectorAll("section.lesson[data-title]")].map((s) => [s.getAttribute("data-title"), document.querySelector(`.navitem[data-target="${s.id}"] .t`)?.textContent]));
+for (const [want, got] of navTitles) if (want !== got) fail(`nav: lesson title "${want}" shows as "${got}"`);
+
 await page.goto(`${page_url}#home`);
 const zipText = await page.locator("#starter-zip").textContent();
 const zip = Buffer.from(zipText.replace(/\s+/g, ""), "base64");
